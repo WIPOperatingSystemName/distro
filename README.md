@@ -29,7 +29,8 @@ This is an experimental development system. Public update channels, interactive
 login/account enrollment, installer, recovery, hardware qualification and
 security-supported releases still require separate gates. Screen sharing is
 disabled in the CPU renderer profile; a GUI polkit authentication agent is also
-pending. CI workflows are implemented; remote GitHub execution is unverified.
+pending. Catalog and tooling checks pass on GitHub; full remote build and VM
+qualification remain unverified.
 The console profile exposes an unattended root console. Systemd/desktop profiles
 use locked accounts and an automatic private qualification session. Development
 repositories are explicitly unsigned; the strict-signature fixture is separate.
