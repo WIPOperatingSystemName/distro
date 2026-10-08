@@ -1,0 +1,26 @@
+schema = 1
+
+[package]
+name = "networkmanager"
+version = "1.58.1"
+revision = 3
+arch = "x86_64"
+description = "NetworkManager D-Bus network configuration daemon and libnm"
+license = "GPL-2.0-or-later AND LGPL-2.1-or-later"
+url = "https://networkmanager.dev/"
+backup = ["etc/NetworkManager/NetworkManager.conf"]
+
+[[sources]]
+name = "main"
+url = "https://gitlab.freedesktop.org/api/v4/projects/411/packages/generic/NetworkManager/1.58.1/NetworkManager-1.58.1.tar.xz"
+filename = "NetworkManager-1.58.1.tar.xz"
+sha256 = "262864cfd198123d3e5dbe91937441b97ee9059d6d712e1a5bfbb1c54668d14d"
+
+[dependencies]
+native = []
+target = ["glibc", "glib", "dbus", "libudev", "util-linux", "systemd", "libndp", "curl", "polkit", "wpa-supplicant", "gettext"]
+runtime = ["glibc", "glib", "dbus", "libudev", "util-linux", "systemd", "libndp", "curl", "polkit", "wpa-supplicant", "busybox"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

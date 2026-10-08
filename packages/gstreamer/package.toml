@@ -1,0 +1,24 @@
+schema = 1
+
+[package]
+name = "gstreamer"
+version = "1.28.7"
+revision = 1
+arch = "x86_64"
+description = "Multimedia core and pipeline tools"
+license = "LGPL-2.1-or-later"
+
+[[sources]]
+name = "main"
+url = "https://gstreamer.freedesktop.org/src/gstreamer/gstreamer-1.28.7.tar.xz"
+filename = "gstreamer-1.28.7.tar.xz"
+sha256 = "787329b2c5758e228a71d926a6dcf960bceaacca3cadd63874ba665dfcda013e"
+
+[dependencies]
+native = []
+target = ["glib"]
+runtime = ["glib"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

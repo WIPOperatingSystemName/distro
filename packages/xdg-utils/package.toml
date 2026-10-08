@@ -1,0 +1,24 @@
+schema = 1
+
+[package]
+name = "xdg-utils"
+version = "1.2.1"
+revision = 1
+arch = "x86_64"
+description = "Desktop integration and MIME dispatch scripts"
+license = "MIT"
+
+[[sources]]
+name = "main"
+url = "https://gitlab.freedesktop.org/xdg/xdg-utils/-/archive/v1.2.1/xdg-utils-v1.2.1.tar.gz"
+filename = "xdg-utils-v1.2.1.tar.gz"
+sha256 = "f6b648c064464c2636884c05746e80428110a576f8daacf46ef2e554dcfdae75"
+
+[dependencies]
+native = []
+target = ["busybox", "file", "shared-mime-info", "desktop-file-utils"]
+runtime = ["busybox", "file", "shared-mime-info", "desktop-file-utils"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

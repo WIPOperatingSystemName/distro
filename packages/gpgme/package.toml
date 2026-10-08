@@ -1,0 +1,24 @@
+schema = 1
+
+[package]
+name = "gpgme"
+version = "2.2.0"
+revision = 1
+arch = "x86_64"
+description = "GnuPG cryptographic engine interface for package signatures"
+license = "LGPL-2.1-or-later"
+
+[[sources]]
+name = "main"
+url = "https://www.gnupg.org/ftp/gcrypt/gpgme/gpgme-2.2.0.tar.bz2"
+filename = "gpgme-2.2.0.tar.bz2"
+sha256 = "7160e80e84dafd00d956c84891c533bb7ab16a6a54fbe1574b2f3acf0496977b"
+
+[dependencies]
+native = []
+target = ["glibc", "libgpg-error", "libassuan", "gnupg"]
+runtime = ["glibc", "libgpg-error", "libassuan", "gnupg"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

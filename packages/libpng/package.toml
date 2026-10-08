@@ -1,0 +1,24 @@
+schema = 1
+
+[package]
+name = "libpng"
+version = "1.6.59"
+revision = 1
+arch = "x86_64"
+description = "PNG image decoding"
+license = "Libpng-2.0"
+
+[[sources]]
+name = "main"
+url = "https://github.com/pnggroup/libpng/archive/refs/tags/v1.6.59.tar.gz"
+filename = "libpng-1.6.59.tar.gz"
+sha256 = "2540302a1844ad2b2b501977abecfa850f265f97b78f065a712ab4074a89f5b5"
+
+[dependencies]
+native = []
+target = ["glibc", "zlib"]
+runtime = ["glibc", "zlib"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

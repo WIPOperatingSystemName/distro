@@ -1,0 +1,20 @@
+[Unit]
+Description=Disposable regular-user PAM and logind session qualification
+Requires=systemd-logind.service dbus.service
+After=systemd-logind.service dbus.service systemd-user-sessions.service
+
+[Service]
+User=custom
+Group=custom
+PAMName=login
+Environment=XDG_SESSION_TYPE=tty
+Environment=XDG_SEAT=seat0
+Environment=XDG_VTNR=1
+TTYPath=/dev/tty1
+StandardInput=tty
+StandardOutput=journal+console
+StandardError=journal+console
+ExecStart=/usr/lib/custom-distro/check-user-session
+
+[Install]
+WantedBy=multi-user.target

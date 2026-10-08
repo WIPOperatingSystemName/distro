@@ -1,0 +1,24 @@
+schema = 1
+
+[package]
+name = "libevdev"
+version = "1.13.4"
+revision = 1
+arch = "x86_64"
+description = "Linux input event device access library"
+license = "MIT"
+
+[[sources]]
+name = "main"
+url = "https://www.freedesktop.org/software/libevdev/libevdev-1.13.4.tar.xz"
+filename = "libevdev-1.13.4.tar.xz"
+sha256 = "f00ab8d42ad8b905296fab67e13b871f1a424839331516642100f82ad88127cd"
+
+[dependencies]
+native = []
+target = ["glibc"]
+runtime = ["glibc"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

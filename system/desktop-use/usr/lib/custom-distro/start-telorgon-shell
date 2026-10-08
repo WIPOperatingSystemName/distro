@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+export PATH=/usr/bin:/bin
+umask 077
+logs="$HOME/.local/state/telorgon"
+mkdir -p "$logs"
+chmod 700 "$logs"
+unset TELORGON_LATENCY_TRACE WAYLAND_DEBUG
+exec /usr/bin/telorgon-session > "$logs/shell.log" 2>&1

@@ -1,0 +1,24 @@
+schema = 1
+
+[package]
+name = "gsettings-desktop-schemas"
+version = "51.0"
+revision = 1
+arch = "x86_64"
+description = "GNOME desktop GSettings schemas and compiled settings cache"
+license = "LGPL-2.1-or-later"
+
+[[sources]]
+name = "main"
+url = "https://download.gnome.org/sources/gsettings-desktop-schemas/51/gsettings-desktop-schemas-51.0.tar.xz"
+filename = "gsettings-desktop-schemas-51.0.tar.xz"
+sha256 = "1e2419a5f21d26c324b28ae1c00e29e9175e8b596fff385a04c2172b36652226"
+
+[dependencies]
+native = []
+target = ["glib", "gettext"]
+runtime = ["glib"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

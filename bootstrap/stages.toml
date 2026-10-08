@@ -1,0 +1,74 @@
+schema = 1
+target = "x86_64-custom-linux-gnu"
+
+[[stages]]
+name = "binutils"
+script = "stages/binutils.sh"
+sources = ["binutils"]
+requires = []
+outputs = ["{tools}/bin/{target}-ld", "{tools}/bin/{target}-as"]
+
+[[stages]]
+name = "gawk-native"
+script = "stages/gawk-native.sh"
+sources = ["gawk"]
+requires = ["binutils"]
+outputs = ["{tools}/native/bin/gawk"]
+
+[[stages]]
+name = "flex-native"
+script = "stages/flex-native.sh"
+sources = ["flex"]
+requires = []
+outputs = ["{tools}/native/bin/flex"]
+
+[[stages]]
+name = "elfutils-native"
+script = "stages/elfutils-native.sh"
+sources = ["elfutils"]
+requires = []
+outputs = ["{tools}/native/include/libelf.h", "{tools}/native/include/gelf.h", "{tools}/native/lib/libelf.so", "{tools}/native/lib/pkgconfig/libelf.pc"]
+
+[[stages]]
+name = "gperf-native"
+script = "stages/gperf-native.sh"
+sources = ["gperf"]
+requires = []
+outputs = ["{tools}/native/bin/gperf"]
+
+[[stages]]
+name = "gcc"
+script = "stages/gcc.sh"
+sources = ["gcc", "gmp", "mpfr", "mpc"]
+requires = ["binutils", "gawk-native"]
+outputs = ["{tools}/bin/{target}-gcc", "{tools}/lib/gcc/{target}/15.2.0/libgcc.a"]
+
+[[stages]]
+name = "headers"
+script = "stages/headers.sh"
+sources = ["linux"]
+requires = ["gcc"]
+outputs = ["{sysroot}/usr/include/linux/version.h", "{sysroot}/usr/include/asm/unistd.h"]
+
+[[stages]]
+name = "glibc"
+script = "stages/glibc.sh"
+sources = ["glibc"]
+requires = ["headers"]
+outputs = ["{sysroot}/usr/lib/libc.so.6", "{sysroot}/usr/lib/libc.a", "{sysroot}/lib64/ld-linux-x86-64.so.2"]
+
+[[stages]]
+name = "validate"
+script = "stages/validate.py"
+sources = []
+requires = ["glibc"]
+outputs = ["{sysroot}/.bootstrap-validated.json"]
+interpreter = "python3"
+
+[[stages]]
+name = "gcc-pass2"
+script = "stages/gcc-pass2.sh"
+helpers = ["stages/validate-runtime.py"]
+sources = ["gcc", "gmp", "mpfr", "mpc"]
+requires = ["validate"]
+outputs = ["{tools}/pass2/bin/{target}-gcc", "{tools}/pass2/bin/{target}-g++", "{tools}/pass2/{target}/lib/libgcc_s.so.1", "{tools}/pass2/{target}/lib/libstdc++.so.6", "{tools}/pass2/.runtime-validated.json"]

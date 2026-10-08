@@ -1,0 +1,28 @@
+schema = 1
+
+[package]
+name = "telorgon-settings-app"
+version = "0.1.0"
+revision = 3
+arch = "x86_64"
+description = "Telorgon display, audio, network, power and personalization settings"
+license = "GPL-3.0-or-later"
+
+[source]
+kind = "local-content-snapshot"
+primary = "telorgon-settings-app"
+projects = ["telorgon", "telorgon-settings-app"]
+
+[build]
+adapter = "target-cargo"
+binary = "telorgon-settings-app"
+
+[requirements]
+link_libraries = ["c", "m", "gcc_s"]
+pkg_config = []
+wayland_xml = false
+bindgen = false
+
+[runtime]
+packages = ["glibc", "libgcc", "libstdc++", "wayland", "libxkbcommon", "dbus", "networkmanager", "upower", "power-profiles-daemon", "polkit", "telorgon-shell"]
+files = ["/usr/bin/dbus-daemon"]

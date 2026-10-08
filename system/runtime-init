@@ -1,0 +1,37 @@
+#!/bin/busybox sh
+# PID 1 for the source-built console slice; systemd can replace this root policy.
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+exec </dev/console >/dev/console 2>&1
+mkdir -p /run /tmp /proc /sys /dev
+mount -t tmpfs tmpfs /tmp
+hostname custom-distro
+if [ ! -r /etc/os-release ] || [ ! -s /etc/custom-distro/build-manifest.json ]; then
+    printf 'Custom Distro runtime metadata is missing.\n'
+    exec /bin/busybox sh
+fi
+. /etc/os-release
+if [ "$ID" != custom-distro ] || [ ! -x /bin/busybox ]; then
+    printf 'Custom Distro root validation failed.\n'
+    exec /bin/busybox sh
+fi
+printf '\n%s\n' "$PRETTY_NAME"
+printf 'Root mode: %s\n' "${DISTRO_ROOT_MODE:-unknown}"
+printf 'Hostname: %s\n' "$(hostname)"
+/bin/busybox | head -n 1
+printf 'Package inventory: /etc/custom-distro/package-inventory.json\n'
+printf 'Build manifest: /etc/custom-distro/build-manifest.json\n'
+printf '\nCUSTOM_DISTRO_BOOT_OK\n'
+if [ "${DISTRO_ROOT_MODE:-}" = persistent ]; then
+    printf 'CUSTOM_DISTRO_PERSISTENT_ROOT_OK\n'
+fi
+if [ -x /usr/libexec/custom-distro/check-package-upgrade ]; then
+    /usr/libexec/custom-distro/check-package-upgrade || printf 'CUSTOM_PACKAGE_UPGRADE_FAILED\n'
+fi
+if [ -x /usr/libexec/custom-distro/check-signed-package-upgrade ]; then
+    /usr/libexec/custom-distro/check-signed-package-upgrade || printf 'CUSTOM_SIGNED_PACKAGE_UPGRADE_FAILED\n'
+fi
+printf 'Type poweroff -f to stop the VM.\n\n'
+while true; do
+    /bin/busybox setsid /bin/busybox sh -c 'exec /bin/busybox sh </dev/console >/dev/console 2>&1'
+    sleep 1
+done

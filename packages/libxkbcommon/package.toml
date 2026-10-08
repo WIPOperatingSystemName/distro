@@ -1,0 +1,24 @@
+schema = 1
+
+[package]
+name = "libxkbcommon"
+version = "1.11.0"
+revision = 1
+arch = "x86_64"
+description = "Keyboard layout compiler and state tracking library"
+license = "MIT"
+
+[[sources]]
+name = "main"
+url = "https://github.com/xkbcommon/libxkbcommon/archive/refs/tags/xkbcommon-1.11.0.tar.gz"
+filename = "libxkbcommon-1.11.0.tar.gz"
+sha256 = "78a6b14f16e9a55025978c252e53ce9e16a02bfdb929550b9a0db5af87db7e02"
+
+[dependencies]
+native = []
+target = ["glibc"]
+runtime = ["glibc", "xkeyboard-config"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

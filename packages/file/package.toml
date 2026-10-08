@@ -1,0 +1,25 @@
+schema = 1
+
+[package]
+name = "file"
+version = "5.48"
+revision = 1
+arch = "x86_64"
+description = "Content-based file identification with actual libmagic and MIME output"
+license = "BSD-2-Clause"
+url = "https://www.astron.com/pub/file"
+
+[[sources]]
+name = "main"
+url = "https://www.astron.com/pub/file/file-5.48.tar.gz"
+filename = "file-5.48.tar.gz"
+sha256 = "ed14656883b23a364b4057c05595d93252da9bc473d30106519519d0da141283"
+
+[dependencies]
+native = []
+target = ["glibc", "zlib", "xz", "libseccomp"]
+runtime = ["glibc", "zlib", "xz", "libseccomp"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

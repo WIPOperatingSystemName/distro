@@ -1,0 +1,60 @@
+#!/bin/busybox sh
+# Distro-owned early userspace. Root PID 1 is chosen by the target root's policy.
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+mkdir -p /dev /proc /sys /run /tmp
+mount -t devtmpfs devtmpfs /dev
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t tmpfs tmpfs /run
+mount -t tmpfs tmpfs /tmp
+exec </dev/console >/dev/console 2>&1
+printf '\nCustom Distro early userspace (Telorgon UEFI path)\n'
+root_spec=
+for argument in $(cat /proc/cmdline); do
+    case "$argument" in root=*) root_spec=${argument#root=} ;; esac
+done
+if [ -n "$root_spec" ]; then
+    case "$root_spec" in
+        UUID=*|LABEL=*)
+            count=0
+            while [ "$count" -lt 10 ]; do
+                root_device=$(/bin/busybox findfs "$root_spec" 2>/dev/null) && break
+                count=$((count + 1))
+                sleep 1
+            done
+            ;;
+        /dev/*) root_device=$root_spec ;;
+        *) printf 'Unsupported root specification: %s\n' "$root_spec"; root_device= ;;
+    esac
+    mkdir -p /newroot
+    if [ -n "$root_device" ] && mount -t ext4 -o rw "$root_device" /newroot; then
+        mkdir -p /newroot/dev /newroot/proc /newroot/sys /newroot/run
+        init_command=/sbin/init
+        if [ -r /newroot/etc/custom-distro/init-command ]; then
+            read -r init_command </newroot/etc/custom-distro/init-command
+        fi
+        case "$init_command" in
+            /sbin/init|/usr/lib/custom-distro/init) ;;
+            *) printf 'Unsupported target init command\n'; init_command= ;;
+        esac
+        if [ -n "$init_command" ] && [ -x "/newroot$init_command" ]; then
+            export DISTRO_ROOT_MODE=persistent
+            mount --move /dev /newroot/dev
+            mount --move /proc /newroot/proc
+            mount --move /sys /newroot/sys
+            mount --move /run /newroot/run
+            printf 'CUSTOM_DISTRO_SWITCH_ROOT %s\n' "$root_device"
+            exec /bin/busybox switch_root /newroot "$init_command"
+        fi
+        printf 'Installed root lacks a usable init command.\n'
+    fi
+    printf 'Root handoff failed; emergency early-userspace console follows.\n'
+    /bin/busybox sh
+    exec /bin/busybox poweroff -f
+fi
+export DISTRO_ROOT_MODE=ram
+if [ -x /usr/lib/custom-distro/init ]; then
+    exec /usr/lib/custom-distro/init
+fi
+printf 'Runtime policy is missing; early-userspace emergency console follows.\n'
+exec /bin/busybox sh

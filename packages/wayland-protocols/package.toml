@@ -1,0 +1,36 @@
+schema = 1
+
+[package]
+name = "wayland-protocols"
+version = "1.47"
+revision = 1
+arch = "x86_64"
+description = "Wayland extension protocol XML data"
+license = "MIT"
+
+[[sources]]
+name = "main"
+url = "https://gitlab.freedesktop.org/wayland/wayland-protocols/-/releases/1.47/downloads/wayland-protocols-1.47.tar.xz"
+filename = "wayland-protocols-1.47.tar.xz"
+sha256 = "5fd4349bcbc9bab9a46f8cf77d1f434296a7a052c87440a094f63fcf62a58e20"
+
+[[sources]]
+name = "wayland"
+url = "https://gitlab.freedesktop.org/wayland/wayland/-/releases/1.24.0/downloads/wayland-1.24.0.tar.xz"
+filename = "wayland-1.24.0.tar.xz"
+sha256 = "82892487a01ad67b334eca83b54317a7c86a03a89cfadacfef5211f11a5d0536"
+
+[[sources]]
+name = "expat"
+url = "https://github.com/libexpat/libexpat/releases/download/R_2_7_1/expat-2.7.1.tar.xz"
+filename = "expat-2.7.1.tar.xz"
+sha256 = "354552544b8f99012e5062f7d570ec77f14b412a3ff5c7d8d0dae62c0d217c30"
+
+[dependencies]
+native = []
+target = ["wayland"]
+runtime = []
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

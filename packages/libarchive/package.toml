@@ -1,0 +1,25 @@
+schema = 1
+
+[package]
+name = "libarchive"
+version = "3.8.9"
+revision = 2
+arch = "x86_64"
+description = "Archive library with source-built gzip and XZ support"
+license = "BSD-2-Clause"
+url = "https://www.libarchive.org"
+
+[[sources]]
+name = "main"
+url = "https://www.libarchive.org/downloads/libarchive-3.8.9.tar.xz"
+filename = "libarchive-3.8.9.tar.xz"
+sha256 = "888c934f9d95648ecb9163dc8e23ab80a476ecb81a8f1154704a227b5b676dde"
+
+[dependencies]
+native = []
+target = ["glibc", "xz", "zlib", "openssl"]
+runtime = ["glibc", "xz", "zlib", "openssl"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

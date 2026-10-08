@@ -1,0 +1,31 @@
+schema = 1
+
+[package]
+name = "systemd"
+version = "259.9"
+revision = 3
+arch = "x86_64"
+description = "Service manager, udev, journald, logind and PAM session integration"
+license = "LGPL-2.1-or-later AND GPL-2.0-or-later"
+url = "https://github.com/systemd/systemd/archive/refs/tags/v259.9.tar.gz"
+provides = ["libudev=259.9"]
+conflicts = ["libudev"]
+replaces = ["libudev"]
+backup = ["etc/pam.d/systemd-user", "etc/pam.d/systemd-run0", "etc/udev/udev.conf",
+          "etc/udev/iocost.conf", "etc/systemd/journald.conf", "etc/systemd/logind.conf",
+          "etc/systemd/sleep.conf", "etc/systemd/user.conf", "etc/systemd/system.conf"]
+
+[[sources]]
+name = "main"
+url = "https://github.com/systemd/systemd/archive/refs/tags/v259.9.tar.gz"
+filename = "systemd-259.9.tar.gz"
+sha256 = "6ac77a1baf0539b835193eec46cdb1c73abb42d7f87aa977009150e9d8375757"
+
+[dependencies]
+native = []
+target = ["glibc", "libxcrypt", "pam", "util-linux", "libseccomp", "libsystemd"]
+runtime = ["glibc", "libxcrypt", "pam", "util-linux", "libseccomp", "libsystemd", "dbus", "polkit", "busybox"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

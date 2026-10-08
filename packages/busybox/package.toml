@@ -1,0 +1,25 @@
+schema = 1
+
+[package]
+name = "busybox"
+version = "1.37.0"
+revision = 2
+arch = "x86_64"
+description = "Static source-built early console and repair utilities"
+license = "GPL-2.0-only"
+url = "https://busybox.net/"
+
+[[sources]]
+name = "main"
+url = "https://busybox.net/downloads/busybox-1.37.0.tar.bz2"
+filename = "busybox-1.37.0.tar.bz2"
+sha256 = "3311dff32e746499f4df0d5df04d7eb396382d7e108bb9250e7b519b837043a4"
+
+[dependencies]
+native = []
+target = ["glibc"]
+runtime = []
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

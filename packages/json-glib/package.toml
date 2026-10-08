@@ -1,0 +1,24 @@
+schema = 1
+
+[package]
+name = "json-glib"
+version = "1.10.8"
+revision = 1
+arch = "x86_64"
+description = "GLib JSON parsing"
+license = "LGPL-2.1-or-later"
+
+[[sources]]
+name = "main"
+url = "https://download.gnome.org/sources/json-glib/1.10/json-glib-1.10.8.tar.xz"
+filename = "json-glib-1.10.8.tar.xz"
+sha256 = "55c5c141a564245b8f8fbe7698663c87a45a7333c2a2c56f06f811ab73b212dd"
+
+[dependencies]
+native = []
+target = ["glib"]
+runtime = ["glib"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

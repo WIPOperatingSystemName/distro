@@ -1,0 +1,13 @@
+[Unit]
+Description=Telorgon Wayland compositor
+Requires=dbus.service pipewire.service
+Wants=wireplumber.service
+After=dbus.service pipewire.service wireplumber.service
+Before=graphical-session.target
+PartOf=telorgon-session.target
+
+[Service]
+Type=exec
+ExecStart=/usr/lib/custom-distro/start-telorgon-shell
+ExecStartPost=/usr/lib/custom-distro/wait-telorgon-shell
+TimeoutStartSec=35

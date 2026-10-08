@@ -1,0 +1,43 @@
+schema = 1
+
+[package]
+name = "libndp"
+version = "1.9"
+revision = 1
+arch = "x86_64"
+description = "IPv6 neighbor discovery library"
+license = "LGPL-2.1-or-later"
+url = "https://github.com/jpirko/libndp"
+
+[[sources]]
+name = "main"
+url = "https://github.com/jpirko/libndp/archive/refs/tags/v1.9.tar.gz"
+filename = "libndp-1.9.tar.gz"
+sha256 = "e564f5914a6b1b799c3afa64c258824a801c1b79a29e2fe6525b682249c65261"
+
+[[sources]]
+name = "autoconf"
+url = "https://ftp.gnu.org/gnu/autoconf/autoconf-2.73.tar.xz"
+filename = "autoconf-2.73.tar.xz"
+sha256 = "9fd672b1c8425fac2fa67fa0477b990987268b90ff36d5f016dae57be0d6b52e"
+
+[[sources]]
+name = "automake"
+url = "https://ftp.gnu.org/gnu/automake/automake-1.18.1.tar.xz"
+filename = "automake-1.18.1.tar.xz"
+sha256 = "168aa363278351b89af56684448f525a5bce5079d0b6842bd910fdd3f1646887"
+
+[[sources]]
+name = "libtool"
+url = "https://ftp.gnu.org/gnu/libtool/libtool-2.5.4.tar.xz"
+filename = "libtool-2.5.4.tar.xz"
+sha256 = "f81f5860666b0bc7d84baddefa60d1cb9fa6fceb2398cc3baca6afaa60266675"
+
+[dependencies]
+native = []
+target = ["glibc"]
+runtime = ["glibc"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

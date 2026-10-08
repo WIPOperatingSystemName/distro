@@ -1,0 +1,24 @@
+schema = 1
+
+[package]
+name = "polkit"
+version = "127"
+revision = 2
+arch = "x86_64"
+description = "System authorization authority with PAM authentication"
+license = "LGPL-2.0-or-later"
+
+[[sources]]
+name = "main"
+url = "https://github.com/polkit-org/polkit/archive/refs/tags/127.tar.gz"
+filename = "polkit-127.tar.gz"
+sha256 = "9b7bc16f086479dcc626c575976568ba4a85d34297a750d8ab3d2e57f6d8b988"
+
+[dependencies]
+native = []
+target = ["glib", "duktape", "expat", "dbus", "pam", "systemd", "gettext"]
+runtime = ["glib", "duktape", "expat", "dbus", "pam", "systemd"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

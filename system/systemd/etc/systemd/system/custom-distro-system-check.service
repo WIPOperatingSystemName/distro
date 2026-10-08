@@ -1,0 +1,13 @@
+[Unit]
+Description=Disposable system service runtime qualification
+Requires=dbus.service systemd-logind.service systemd-udevd.service custom-distro-session-check.service
+After=dbus.service systemd-logind.service systemd-udevd.service custom-distro-session-check.service
+
+[Service]
+Type=oneshot
+StandardOutput=journal+console
+StandardError=journal+console
+ExecStart=/usr/lib/custom-distro/check-system-services
+
+[Install]
+WantedBy=multi-user.target

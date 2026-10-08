@@ -1,0 +1,25 @@
+schema = 1
+
+[package]
+name = "glibc"
+version = "2.42"
+revision = 1
+arch = "x86_64"
+description = "Source-built GNU C library runtime from the verified cross bootstrap"
+license = "LGPL-2.1-or-later"
+url = "https://www.gnu.org/software/libc/"
+
+[[sources]]
+name = "main"
+url = "https://ftp.gnu.org/gnu/glibc/glibc-2.42.tar.xz"
+filename = "glibc-2.42.tar.xz"
+sha256 = "d1775e32e4628e64ef930f435b67bb63af7599acb6be2b335b9f19f16509f17f"
+
+[dependencies]
+native = []
+target = []
+runtime = []
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

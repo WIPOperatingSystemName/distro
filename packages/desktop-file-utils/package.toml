@@ -1,0 +1,25 @@
+schema = 1
+
+[package]
+name = "desktop-file-utils"
+version = "0.28"
+revision = 3
+arch = "x86_64"
+description = "Desktop entry validation and MIME application handler database"
+license = "GPL-2.0-or-later"
+url = "https://www.freedesktop.org/software/desktop-file-utils/releases"
+
+[[sources]]
+name = "main"
+url = "https://www.freedesktop.org/software/desktop-file-utils/releases/desktop-file-utils-0.28.tar.xz"
+filename = "desktop-file-utils-0.28.tar.xz"
+sha256 = "4401d4e231d842c2de8242395a74a395ca468cd96f5f610d822df33594898a70"
+
+[dependencies]
+native = []
+target = ["glibc", "glib"]
+runtime = ["glibc", "glib"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

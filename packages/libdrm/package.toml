@@ -1,0 +1,24 @@
+schema = 1
+
+[package]
+name = "libdrm"
+version = "2.4.125"
+revision = 1
+arch = "x86_64"
+description = "Direct Rendering Manager userspace interface"
+license = "MIT"
+
+[[sources]]
+name = "main"
+url = "https://dri.freedesktop.org/libdrm/libdrm-2.4.125.tar.xz"
+filename = "libdrm-2.4.125.tar.xz"
+sha256 = "d4bae92797a50f81a93524762e0410a49cd84cfa0f997795bc0172ac8fb1d96a"
+
+[dependencies]
+native = []
+target = ["glibc"]
+runtime = ["glibc"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

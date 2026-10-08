@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+export PATH=/usr/bin:/bin
+logs="$HOME/.local/state/custom-distro/qualification"
+count=0
+while [ "$count" -lt 30 ]; do
+    pid=$(systemctl --user show telorgon-shell.service --property=MainPID --value)
+    [ "$pid" -gt 0 ]
+    kill -0 "$pid"
+    if [ -f "$logs/shell.log" ]; then
+        while IFS= read -r line; do
+            case "$line" in
+                'telorgon-session: ready on '*)
+                    socket=${line#telorgon-session: ready on }
+                    if [ -S "$socket" ]; then
+                        printf '%s\n' "$socket" > "$XDG_RUNTIME_DIR/custom-wayland-socket"
+                        exit 0
+                    fi
+                    ;;
+            esac
+        done < "$logs/shell.log"
+    fi
+    count=$((count + 1)); sleep 1
+done
+exit 1

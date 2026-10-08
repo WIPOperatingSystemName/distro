@@ -1,0 +1,24 @@
+schema = 1
+
+[package]
+name = "libgcrypt"
+version = "1.12.4"
+revision = 1
+arch = "x86_64"
+description = "GnuPG cryptographic primitives"
+license = "LGPL-2.1-or-later AND GPL-2.0-or-later"
+
+[[sources]]
+name = "main"
+url = "https://www.gnupg.org/ftp/gcrypt/libgcrypt/libgcrypt-1.12.4.tar.bz2"
+filename = "libgcrypt-1.12.4.tar.bz2"
+sha256 = "d77f68f48879510e79a2f65977ccc68981781ea0923e5bdffac2a193ea3d660e"
+
+[dependencies]
+native = []
+target = ["glibc", "libgpg-error"]
+runtime = ["glibc", "libgpg-error"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

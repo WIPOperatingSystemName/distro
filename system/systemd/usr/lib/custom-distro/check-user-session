@@ -1,0 +1,22 @@
+#!/bin/sh
+set -eu
+export PATH=/usr/bin:/bin
+trap 'echo CUSTOM_USER_SESSION_FAILED' EXIT
+fail() { exit 1; }
+[ "$(stat -c %u "/proc/$$")" = 1000 ] || fail
+[ "$XDG_RUNTIME_DIR" = /run/user/1000 ] || fail
+[ "$(stat -c %u "$XDG_RUNTIME_DIR")" = 1000 ] || fail
+[ "$(stat -c %a "$XDG_RUNTIME_DIR")" = 700 ] || fail
+[ "$(stat -c %u /home/custom)" = 1000 ] || fail
+[ -n "${XDG_SESSION_ID:-}" ] || fail
+loginctl show-session "$XDG_SESSION_ID" -p User -p Seat -p Type -p Active
+[ "$(loginctl show-session "$XDG_SESSION_ID" -p User --value)" = 1000 ] || fail
+printf 'normal user write test\n' > /home/custom/session-check
+printf '%s\n' "$XDG_SESSION_ID" > "$XDG_RUNTIME_DIR/custom-session-ok"
+echo CUSTOM_USER_SESSION_OK
+trap - EXIT
+if [ "$#" -gt 0 ]; then
+    exec "$@"
+fi
+# Keep the actual PAM/logind session open for the root service's bus assertions.
+while true; do sleep 60; done

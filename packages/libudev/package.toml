@@ -1,0 +1,30 @@
+schema = 1
+
+[package]
+name = "libudev"
+version = "3.2.14"
+revision = 1
+arch = "x86_64"
+description = "eudev device enumeration library, daemon and rules"
+license = "GPL-2.0-or-later AND LGPL-2.1-or-later"
+
+[[sources]]
+name = "main"
+url = "https://github.com/eudev-project/eudev/releases/download/v3.2.14/eudev-3.2.14.tar.gz"
+filename = "eudev-3.2.14.tar.gz"
+sha256 = "8da4319102f24abbf7fff5ce9c416af848df163b29590e666d334cc1927f006f"
+
+[[sources]]
+name = "gperf"
+url = "https://ftp.gnu.org/gnu/gperf/gperf-3.1.tar.gz"
+filename = "gperf-3.1.tar.gz"
+sha256 = "588546b945bba4b70b6a3a616e80b4ab466e3f33024a352fc2198112cdbb3ae2"
+
+[dependencies]
+native = []
+target = ["glibc"]
+runtime = ["glibc", "busybox"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

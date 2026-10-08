@@ -1,0 +1,28 @@
+schema = 1
+
+[package]
+name = "telorgon-portal-picker"
+version = "0.1.0"
+revision = 2
+arch = "x86_64"
+description = "Telorgon compositor's screen-sharing consent picker"
+license = "GPL-3.0-or-later"
+
+[source]
+kind = "local-content-snapshot"
+primary = "telorgon-portal-picker"
+projects = ["telorgon", "telorgon-portal-picker"]
+
+[build]
+adapter = "target-cargo"
+binary = "telorgon-portal-picker"
+
+[requirements]
+link_libraries = ["c", "m", "gcc_s", "seat", "udev", "input", "xkbcommon", "wayland-server", "drm", "gbm", "pipewire-0.3"]
+pkg_config = ["libpipewire-0.3", "libspa-0.2"]
+wayland_xml = true
+bindgen = true
+
+[runtime]
+packages = ["glibc", "libgcc", "libstdc++", "wayland", "libxkbcommon", "libdrm", "mesa-gbm", "libseat", "libudev", "libinput", "pipewire", "dbus"]
+files = ["/usr/bin/dbus-daemon"]

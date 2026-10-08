@@ -1,0 +1,24 @@
+schema = 1
+
+[package]
+name = "gst-plugins-good"
+version = "1.28.7"
+revision = 1
+arch = "x86_64"
+description = "WAV and basic audio parsers for portal validation"
+license = "LGPL-2.1-or-later"
+
+[[sources]]
+name = "main"
+url = "https://gstreamer.freedesktop.org/src/gst-plugins-good/gst-plugins-good-1.28.7.tar.xz"
+filename = "gst-plugins-good-1.28.7.tar.xz"
+sha256 = "87256969c82cf3bc8574301f3e7044a90de0ac500a5a27d8ba38c4dde894dd8b"
+
+[dependencies]
+native = []
+target = ["glib", "gstreamer", "gst-plugins-base"]
+runtime = ["glib", "gstreamer", "gst-plugins-base"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

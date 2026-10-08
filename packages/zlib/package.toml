@@ -1,0 +1,25 @@
+schema = 1
+
+[package]
+name = "zlib"
+version = "1.3.2"
+revision = 1
+arch = "x86_64"
+description = "DEFLATE compression library"
+license = "Zlib"
+url = "https://zlib.net/"
+
+[[sources]]
+name = "main"
+url = "https://zlib.net/zlib-1.3.2.tar.xz"
+filename = "zlib-1.3.2.tar.xz"
+sha256 = "d7a0654783a4da529d1bb793b7ad9c3318020af77667bcae35f95d0e42a792f3"
+
+[dependencies]
+native = []
+target = ["glibc"]
+runtime = ["glibc"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

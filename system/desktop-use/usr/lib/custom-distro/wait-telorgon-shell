@@ -1,0 +1,33 @@
+#!/bin/sh
+set -eu
+export PATH=/usr/bin:/bin
+logs="$HOME/.local/state/telorgon"
+count=0
+while [ "$count" -lt 30 ]; do
+    pid=$(systemctl --user show telorgon-shell.service --property=MainPID --value)
+    [ "$pid" -gt 0 ]
+    kill -0 "$pid"
+    if [ -f "$logs/shell.log" ]; then
+        while IFS= read -r line; do
+            case "$line" in
+                'telorgon-session: ready on '*)
+                    socket=${line#telorgon-session: ready on }
+                    case "$socket" in
+                        "$XDG_RUNTIME_DIR"/wayland-*)
+                            if [ -S "$socket" ]; then
+                                export WAYLAND_DISPLAY="$socket"
+                                /usr/bin/dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE
+                                printf '%s\n' "$socket" > "$XDG_RUNTIME_DIR/telorgon-wayland-socket"
+                                exit 0
+                            fi
+                            ;;
+                    esac
+                    ;;
+            esac
+        done < "$logs/shell.log"
+    fi
+    count=$((count + 1))
+    sleep 1
+done
+echo "Telorgon did not create its desktop socket; see $logs/shell.log." >&2
+exit 1

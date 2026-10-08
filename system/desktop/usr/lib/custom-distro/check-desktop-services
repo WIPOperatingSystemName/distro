@@ -1,0 +1,35 @@
+#!/bin/sh
+set -eu
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+logs=/home/custom/.local/state/custom-distro/qualification
+diagnose() {
+    systemctl --failed --no-pager
+    if [ -d "$logs" ]; then
+        for file in "$logs"/*.log; do [ ! -f "$file" ] || tail -n 80 "$file" || true; done
+    fi
+    echo CUSTOM_DESKTOP_SESSION_FAILED
+}
+trap diagnose EXIT
+/usr/lib/custom-distro/check-system-services
+# Assembly defers target hooks; initialize the actual guest cache here.
+update-desktop-database /usr/share/applications
+update-mime-database /usr/share/mime
+for service in seatd.service polkit.service NetworkManager.service upower.service power-profiles-daemon.service; do
+    systemctl is-active --quiet "$service"
+done
+busctl --system get-property org.freedesktop.NetworkManager /org/freedesktop/NetworkManager org.freedesktop.NetworkManager Version
+busctl --system call org.freedesktop.NetworkManager /org/freedesktop/NetworkManager org.freedesktop.NetworkManager GetDevices
+busctl --system call org.freedesktop.UPower /org/freedesktop/UPower org.freedesktop.UPower EnumerateDevices
+busctl --system get-property org.freedesktop.UPower.PowerProfiles /org/freedesktop/UPower/PowerProfiles org.freedesktop.UPower.PowerProfiles ActiveProfile
+busctl --system get-property org.freedesktop.PolicyKit1 /org/freedesktop/PolicyKit1/Authority org.freedesktop.PolicyKit1.Authority BackendName
+echo CUSTOM_DESKTOP_SYSTEM_SERVICES_OK
+count=0
+while [ ! -s /run/user/1000/custom-desktop-ok ]; do
+    count=$((count + 1)); [ "$count" -lt 100 ]; sleep 1
+done
+session=$(cat /run/user/1000/custom-desktop-ok)
+[ "$(loginctl show-session "$session" -p User --value)" = 1000 ]
+[ "$(loginctl show-session "$session" -p Type --value)" = wayland ]
+[ "$(loginctl show-session "$session" -p Active --value)" = yes ]
+trap - EXIT
+echo CUSTOM_DESKTOP_SESSION_OK

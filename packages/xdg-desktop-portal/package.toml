@@ -1,0 +1,24 @@
+schema = 1
+
+[package]
+name = "xdg-desktop-portal"
+version = "1.22.1"
+revision = 1
+arch = "x86_64"
+description = "Desktop portal broker and sandboxed media validators"
+license = "LGPL-2.1-or-later"
+
+[[sources]]
+name = "main"
+url = "https://github.com/flatpak/xdg-desktop-portal/releases/download/1.22.1/xdg-desktop-portal-1.22.1.tar.xz"
+filename = "xdg-desktop-portal-1.22.1.tar.xz"
+sha256 = "d4879ddb3d65ff1a8f19187497e6f13dc5d267bcac404a5d501218be355753d3"
+
+[dependencies]
+native = []
+target = ["glib", "json-glib", "fuse3", "gdk-pixbuf", "gstreamer", "gst-plugins-base", "gst-plugins-good", "pipewire", "systemd", "libgudev", "bubblewrap", "gettext"]
+runtime = ["glib", "json-glib", "fuse3", "gdk-pixbuf", "gstreamer", "gst-plugins-base", "gst-plugins-good", "pipewire", "systemd", "libgudev", "bubblewrap"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

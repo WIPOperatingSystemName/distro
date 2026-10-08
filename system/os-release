@@ -1,0 +1,5 @@
+NAME="Custom Distro"
+PRETTY_NAME="Custom Distro (development prototype)"
+ID=custom-distro
+VERSION_ID=0.0.1
+BUILD_ID=source-built-prototype

@@ -1,0 +1,5 @@
+schema = 1
+name = "Custom Distro"
+description = "Experimental Telorgon software-rendered desktop and private VM qualification"
+packages = ["busybox", "linux", "pacman", "gnupg", "systemd", "telorgon-shell", "telorgon-file-explorer", "telorgon-settings-app", "telorgon-portal-picker", "shared-mime-info", "desktop-file-utils", "file"]
+image_size_mib = 2048

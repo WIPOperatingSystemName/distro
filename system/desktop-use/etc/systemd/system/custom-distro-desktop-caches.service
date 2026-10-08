@@ -1,0 +1,12 @@
+[Unit]
+Description=Initialize desktop application, MIME and settings caches
+After=local-fs.target
+Before=custom-distro-desktop.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/update-mime-database /usr/share/mime
+ExecStart=/usr/bin/update-desktop-database /usr/share/applications
+ExecStart=/usr/bin/glib-compile-schemas /usr/share/glib-2.0/schemas
+ExecStart=/usr/bin/gio-querymodules /usr/lib/gio/modules
+RemainAfterExit=yes

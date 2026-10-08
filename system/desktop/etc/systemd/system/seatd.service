@@ -1,0 +1,11 @@
+[Unit]
+Description=Seat access for the Telorgon compositor
+After=systemd-udevd.service
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/seatd -g seat
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

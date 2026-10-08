@@ -1,0 +1,226 @@
+name: Telorgon disk candidates and VM qualification
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Console upgrade candidate or complete source-built desktop candidate
+        required: true
+        default: console
+        type: choice
+        options:
+          - console
+          - desktop
+      build_jobs:
+        description: Source compilation jobs on the disposable desktop worker
+        required: true
+        default: '4'
+        type: choice
+        options:
+          - '2'
+          - '4'
+          - '8'
+      source_bundle_url:
+        description: Optional HTTPS source bundle URL (default uses pinned submodules)
+        required: false
+        type: string
+      source_bundle_sha256:
+        description: Reviewed SHA256, required when a source bundle URL is supplied
+        required: false
+        type: string
+permissions:
+  contents: read
+jobs:
+  console-candidate:
+    if: inputs.profile == 'console'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      CD_BUNDLE_URL: ${{ inputs.source_bundle_url }}
+      CD_BUNDLE_SHA256: ${{ inputs.source_bundle_sha256 }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Prepare disposable worker seeds
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends build-essential bison bc m4 perl autoconf automake libtool pkg-config meson ninja-build fakeroot zlib1g-dev xz-utils qemu-system-x86 ovmf e2fsprogs gnupg python3-jinja2
+          rustup toolchain install nightly-2026-10-06 --profile minimal --target x86_64-unknown-uefi
+      - name: Verify portable application source inputs
+        run: |
+          mkdir -p out/ci
+          if [ -z "$CD_BUNDLE_URL" ] && [ -z "$CD_BUNDLE_SHA256" ]; then
+            python3 build.py source-bundle export > out/ci/source-export.json
+            CD_BUNDLE_ARCHIVE=$(python3 -c 'import json; print(json.load(open("out/ci/source-export.json"))["archive"])')
+            CD_BUNDLE_SHA256=$(python3 -c 'import json; print(json.load(open("out/ci/source-export.json"))["sha256"])')
+            cp "$CD_BUNDLE_ARCHIVE" out/ci/telorgon-sources.tar.xz
+          else
+            test -n "$CD_BUNDLE_URL" && test -n "$CD_BUNDLE_SHA256" || { echo 'Supply both source bundle URL and SHA256'; exit 1; }
+            curl --fail --location --proto '=https' --proto-redir '=https' --tlsv1.2 --output out/ci/telorgon-sources.tar.xz "$CD_BUNDLE_URL"
+          fi
+          python3 build.py source-bundle import out/ci/telorgon-sources.tar.xz --sha256 "$CD_BUNDLE_SHA256"
+      - run: python3 build.py validate
+      - run: python3 build.py fetch linux pacman --bootstrap
+      - run: python3 build.py bootstrap --jobs 2
+      - run: python3 build.py native-toolkit --fetch --jobs 2
+      - run: python3 build.py build linux pacman --jobs 2
+      - name: Build Telorgon EFI from the verified source workspace
+        run: |
+          CD_SOURCE_WORKSPACE=$(python3 -c 'import json; print(json.load(open("out/bundles/current.json"))["root"])')
+          python3 build.py loader --source-root "$CD_SOURCE_WORKSPACE" --online
+      - run: python3 build.py image
+      - run: python3 build.py vm --output out/verification/console --timeout 240
+      - run: python3 build.py image --test-upgrade
+      - run: python3 build.py vm --image out/images/custom-distro-update-test.img --expect CUSTOM_PACKAGE_UPGRADE_OK --output out/verification/upgrade --timeout 240
+      - run: python3 build.py image --test-signed-upgrade
+      - run: python3 build.py vm --image out/images/custom-distro-signed-update-test.img --expect CUSTOM_SIGNED_PACKAGE_UPGRADE_OK --output out/verification/signed-upgrade --timeout 240
+      - run: python3 -m unittest discover -s tests -v
+      - name: Preserve candidate qualification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: telorgon-console-candidate-evidence
+          if-no-files-found: warn
+          path: |
+            out/verification/**/result.json
+            out/verification/**/serial.log
+            out/verification/**/qemu.log
+            out/verification/**/command.json
+            out/verification/**/windows.json
+            out/logs/
+            out/state/
+            out/images/*.json
+            out/bootstrap/work/stamps/
+            out/loader/loader-sources.json
+            out/bundles/current.json
+            out/signing-tests/**/fixture.json
+  desktop-candidate:
+    if: inputs.profile == 'desktop'
+    # This label must identify a fresh, disposable worker with no release secrets
+    # or persistent privileged host access. This job is intentionally manual.
+    runs-on: [self-hosted, linux, x64, custom-distro-ephemeral]
+    timeout-minutes: 360
+    env:
+      CD_BUNDLE_URL: ${{ inputs.source_bundle_url }}
+      CD_BUNDLE_SHA256: ${{ inputs.source_bundle_sha256 }}
+      CD_BUILD_JOBS: ${{ inputs.build_jobs }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Require an adequate disposable build worker
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          disk = os.statvfs('.')
+          free_disk = disk.f_bavail * disk.f_frsize
+          ram = int(next(line.split()[1] for line in Path('/proc/meminfo').read_text().splitlines() if line.startswith('MemTotal:'))) * 1024
+          if free_disk < 128 * 1024**3 or ram < 16 * 1024**3:
+              raise SystemExit('Full source build requires at least 128 GiB free disk and 16 GiB RAM; provide a fresh disposable worker')
+          print({'free_disk_bytes': free_disk, 'ram_bytes': ram})
+          PY
+      - name: Prepare declared host seeds
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends build-essential bison bc m4 perl autoconf automake libtool pkg-config meson ninja-build fakeroot zlib1g-dev xz-utils qemu-system-x86 ovmf e2fsprogs gnupg python3-jinja2 cmake clang libclang-dev curl ca-certificates git
+          python3 - <<'PY'
+          import subprocess
+          version = subprocess.check_output(['/usr/bin/meson', '--version'], text=True).strip()
+          if tuple(map(int, version.split('.')[:2])) < (1, 5):
+              raise SystemExit('Pinned GdkPixbuf requires Meson >=1.5 at /usr/bin/meson; configure the disposable worker seed image accordingly')
+          PY
+          rustup toolchain install nightly-2026-10-06 --profile minimal --target x86_64-unknown-uefi --target x86_64-unknown-linux-gnu
+      - name: Verify exact portable application source inputs
+        run: |
+          mkdir -p out/ci
+          if [ -z "$CD_BUNDLE_URL" ] && [ -z "$CD_BUNDLE_SHA256" ]; then
+            python3 build.py source-bundle export > out/ci/source-export.json
+            CD_BUNDLE_ARCHIVE=$(python3 -c 'import json; print(json.load(open("out/ci/source-export.json"))["archive"])')
+            CD_BUNDLE_SHA256=$(python3 -c 'import json; print(json.load(open("out/ci/source-export.json"))["sha256"])')
+            cp "$CD_BUNDLE_ARCHIVE" out/ci/telorgon-sources.tar.xz
+          else
+            test -n "$CD_BUNDLE_URL" && test -n "$CD_BUNDLE_SHA256" || { echo 'Supply both source bundle URL and SHA256'; exit 1; }
+            curl --fail --location --proto '=https' --proto-redir '=https' --tlsv1.2 --output out/ci/telorgon-sources.tar.xz "$CD_BUNDLE_URL"
+          fi
+          python3 build.py source-bundle import out/ci/telorgon-sources.tar.xz --sha256 "$CD_BUNDLE_SHA256"
+      - run: python3 build.py validate
+      - run: python3 build.py fetch --bootstrap
+      - run: python3 build.py bootstrap --jobs "$CD_BUILD_JOBS"
+      - run: python3 build.py native-toolkit --fetch --jobs "$CD_BUILD_JOBS"
+      - name: Build the complete pinned native package catalog
+        run: python3 build.py build --jobs "$CD_BUILD_JOBS"
+      - name: Compose the genuine target desktop SDK and compile Telorgon
+        run: |
+          python3 tools/compose-desktop-sdk.py
+          CD_SOURCE_WORKSPACE=$(python3 -c 'import json; print(json.load(open("out/bundles/current.json"))["root"])')
+          CD_DESKTOP_SYSROOT=$(python3 -c 'import json; print(json.load(open("out/sdk/current.json"))["sysroot"])')
+          python3 build.py apps prepare --source-root "$CD_SOURCE_WORKSPACE"
+          python3 build.py apps check --sysroot "$CD_DESKTOP_SYSROOT" > out/ci/apps-preflight.json
+          python3 -c 'import json; assert json.load(open("out/ci/apps-preflight.json"))["ready_to_build"], "Target desktop build inputs are incomplete"'
+          python3 build.py apps build --sysroot "$CD_DESKTOP_SYSROOT" --online --jobs "$CD_BUILD_JOBS"
+          python3 build.py loader --source-root "$CD_SOURCE_WORKSPACE" --online
+          python3 tools/build-desktop-session-probe.py
+          python3 tools/audit-installed-resources.py
+      - name: Qualify target APIs, TLS, signatures and private IPC
+        run: |
+          python3 tools/qualify-desktop.py --gbm
+          python3 tools/qualify-desktop-services.py
+          python3 tools/qualify-network-crypto.py
+          python3 -m unittest discover -s tests -v
+      - name: Boot console and qualify ordinary and signed guest upgrades
+        run: |
+          python3 build.py image
+          python3 build.py vm --output out/verification/console --timeout 240
+          python3 build.py image --test-upgrade
+          python3 build.py vm --image out/images/custom-distro-update-test.img --expect CUSTOM_PACKAGE_UPGRADE_OK --output out/verification/upgrade --timeout 240
+          python3 build.py image --test-signed-upgrade
+          python3 build.py vm --image out/images/custom-distro-signed-update-test.img --expect CUSTOM_SIGNED_PACKAGE_UPGRADE_OK --output out/verification/signed-upgrade --timeout 240
+      - name: Qualify systemd, PAM and service registration in the actual guest
+        run: |
+          python3 build.py image --profile systemd
+          python3 build.py vm --image out/images/custom-distro-systemd.img --expect CUSTOM_SYSTEMD_RUNTIME_OK --output out/verification/systemd --timeout 100
+      - name: Qualify real guest PAM rejection and password authentication
+        run: |
+          python3 tools/build-pam-auth-probe.py --make-fixture
+          python3 build.py image --profile systemd --test-pam-auth
+          python3 build.py vm --image out/images/custom-distro-pam-auth-test.img --expect CUSTOM_PAM_AUTHENTICATION_OK --output out/verification/pam-auth --timeout 150
+      - name: Qualify actual Telorgon windows, keyboard input and redraw in the guest
+        run: |
+          python3 build.py image --profile desktop
+          python3 build.py vm --image out/images/custom-distro-desktop.img --expect CUSTOM_DESKTOP_SESSION_OK --desktop-input --output out/verification/desktop-final --timeout 150
+          python3 tools/check-wayland-window.py --vm-report out/verification/desktop-final/result.json --output out/verification/desktop-final/windows.json
+      - name: Preserve public candidate evidence only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: telorgon-desktop-candidate-evidence
+          if-no-files-found: warn
+          path: |
+            out/verification/**/result.json
+            out/verification/**/serial.log
+            out/verification/**/qemu.log
+            out/verification/**/command.json
+            out/verification/**/windows.json
+            out/verification/desktop-final/screen.ppm
+            out/logs/
+            out/state/
+            out/images/*.json
+            !out/images/pam-auth-build*.json
+            out/ci/apps-preflight.json
+            out/bootstrap/work/stamps/
+            out/bootstrap/root/.bootstrap-validated.json
+            out/bootstrap/root/tools/pass2/.runtime-validated.json
+            out/native-toolkit/prefix/toolkit.json
+            out/loader/loader-sources.json
+            out/bundles/current.json
+            out/sdk/current.json
+            out/sdk/**/sdk.json
+            out/apps/sources.json
+            out/qualification/**/report.json
+            out/qualification/installed-resource-path-audit.json
+            out/signing-tests/**/fixture.json
+            out/signing-tests/**/qualification.json
+            out/network-tests/**/qualification.json

@@ -1,0 +1,40 @@
+#!/bin/sh
+set -eu
+export PATH=/usr/bin:/bin
+: "${XDG_RUNTIME_DIR:?PAM did not provide a runtime directory}"
+: "${XDG_SESSION_ID:?PAM did not provide a login session}"
+[ "$(id -u)" = 1000 ]
+[ "$(stat -c %u "$XDG_RUNTIME_DIR")" = 1000 ]
+[ "$(stat -c %a "$XDG_RUNTIME_DIR")" = 700 ]
+export XDG_CURRENT_DESKTOP=telorgon-test-shell
+export XDG_SESSION_DESKTOP=telorgon-test-shell
+export XDG_SESSION_TYPE=wayland
+export DBUS_SESSION_BUS_ADDRESS=unix:path="$XDG_RUNTIME_DIR/bus"
+export LIBSEAT_BACKEND=seatd
+
+# Keep the genuine PAM/logind session open while the user manager owns the
+# compositor. Ending this scope first would revoke its active login session.
+cleanup() {
+    trap - EXIT HUP INT TERM
+    systemctl --user stop telorgon-session.target || true
+}
+trap cleanup EXIT
+trap 'exit 0' HUP INT TERM
+
+count=0
+until [ -S "$XDG_RUNTIME_DIR/bus" ] && systemctl --user show-environment > /dev/null 2>&1; do
+    count=$((count + 1))
+    if [ "$count" -ge 30 ]; then
+        echo 'The desktop user manager did not become available.' >&2
+        exit 1
+    fi
+    sleep 1
+done
+systemctl --user import-environment XDG_RUNTIME_DIR XDG_SESSION_ID XDG_SESSION_TYPE XDG_SEAT XDG_VTNR XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DBUS_SESSION_BUS_ADDRESS LIBSEAT_BACKEND
+# --wait retains this PAM scope until the session target becomes inactive.
+# Waiting on its child lets the shell handle shutdown signals immediately.
+systemctl --user --wait start telorgon-session.target &
+waiter=$!
+status=0
+wait "$waiter" || status=$?
+exit "$status"

@@ -1,0 +1,18 @@
+[submodule "telorgon"]
+	path = sources/telorgon
+	url = https://github.com/WIPOperatingSystemName/telorgon.git
+[submodule "bootloader"]
+	path = sources/telorgon-bootloader
+	url = https://github.com/WIPOperatingSystemName/bootloader.git
+[submodule "file-explorer"]
+	path = sources/telorgon-file-explorer
+	url = https://github.com/WIPOperatingSystemName/file-explorer.git
+[submodule "portal-picker"]
+	path = sources/telorgon-portal-picker
+	url = https://github.com/WIPOperatingSystemName/portal-picker.git
+[submodule "settings"]
+	path = sources/telorgon-settings-app
+	url = https://github.com/WIPOperatingSystemName/settings.git
+[submodule "shell"]
+	path = sources/test-shell
+	url = https://github.com/WIPOperatingSystemName/shell.git

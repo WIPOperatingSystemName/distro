@@ -1,0 +1,25 @@
+schema = 1
+
+[package]
+name = "wpa-supplicant"
+version = "2.12"
+revision = 1
+arch = "x86_64"
+description = "WPA2/WPA3 wireless authentication daemon with D-Bus control"
+license = "BSD-3-Clause"
+url = "https://w1.fi/releases"
+
+[[sources]]
+name = "main"
+url = "https://w1.fi/releases/wpa_supplicant-2.12.tar.gz"
+filename = "wpa_supplicant-2.12.tar.gz"
+sha256 = "08e23937e16d0155e55cab2b51f51fbe10d80a1aa91c4e15442645059b737ef6"
+
+[dependencies]
+native = []
+target = ["glibc", "openssl", "libnl", "dbus", "busybox"]
+runtime = ["glibc", "openssl", "libnl", "dbus", "busybox"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

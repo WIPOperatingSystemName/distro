@@ -1,0 +1,24 @@
+schema = 1
+
+[package]
+name = "wireplumber"
+version = "0.5.18"
+revision = 1
+arch = "x86_64"
+description = "PipeWire session and device policy manager"
+license = "MIT"
+
+[[sources]]
+name = "main"
+url = "https://gitlab.freedesktop.org/pipewire/wireplumber/-/archive/0.5.18/wireplumber-0.5.18.tar.gz"
+filename = "wireplumber-0.5.18.tar.gz"
+sha256 = "8c8a326a5b2a570681c1503c83f1fce0cc54ba862019815604b2bc92a7d483a1"
+
+[dependencies]
+native = []
+target = ["glib", "pipewire", "lua", "systemd", "gettext"]
+runtime = ["glib", "pipewire", "lua", "systemd"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

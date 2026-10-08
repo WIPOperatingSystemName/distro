@@ -1,0 +1,36 @@
+schema = 1
+
+[package]
+name = "mesa-gbm"
+version = "24.3.4"
+revision = 1
+arch = "x86_64"
+description = "Mesa GBM interface for the Telorgon CPU KMS renderer"
+license = "MIT"
+
+[[sources]]
+name = "main"
+url = "https://archive.mesa3d.org/mesa-24.3.4.tar.xz"
+filename = "mesa-24.3.4.tar.xz"
+sha256 = "e641ae27191d387599219694560d221b7feaa91c900bcec46bf444218ed66025"
+
+[[sources]]
+name = "mako"
+url = "https://files.pythonhosted.org/packages/9e/38/bd5b78a920a64d708fe6bc8e0a2c075e1389d53bef8413725c63ba041535/mako-1.3.10.tar.gz"
+filename = "mako-1.3.10.tar.gz"
+sha256 = "99579a6f39583fa7e5630a28c3c1f440e4e97a414b80372649c0ce338da2ea28"
+
+[[sources]]
+name = "markupsafe"
+url = "https://files.pythonhosted.org/packages/7e/99/7690b6d4034fffd95959cbe0c02de8deb3098cc577c67bb6a24fe5d7caa7/markupsafe-3.0.3.tar.gz"
+filename = "markupsafe-3.0.3.tar.gz"
+sha256 = "722695808f4b6457b320fdc131280796bdceb04ab50fe1795cd540799ebe1698"
+
+[dependencies]
+native = []
+target = ["glibc", "libgcc", "libstdc++", "libdrm"]
+runtime = ["glibc", "libgcc", "libdrm"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

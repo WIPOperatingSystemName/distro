@@ -1,0 +1,28 @@
+schema = 1
+
+[package]
+name = "telorgon-shell"
+version = "0.1.0"
+revision = 6
+arch = "x86_64"
+description = "Custom Distro's Telorgon Wayland shell and session defaults"
+license = "GPL-3.0-or-later"
+
+[source]
+kind = "local-content-snapshot"
+primary = "test-shell"
+projects = ["telorgon", "test-shell"]
+
+[build]
+adapter = "target-cargo"
+binary = "telorgon-test-shell"
+
+[requirements]
+link_libraries = ["c", "m", "gcc_s", "seat", "udev", "input", "xkbcommon", "wayland-server", "drm", "gbm", "pipewire-0.3"]
+pkg_config = ["libpipewire-0.3", "libspa-0.2"]
+wayland_xml = true
+bindgen = true
+
+[runtime]
+packages = ["glibc", "libgcc", "libstdc++", "wayland", "libdrm", "mesa-gbm", "libseat", "libinput", "libxkbcommon", "xkeyboard-config", "systemd", "dbus", "dconf", "gsettings-desktop-schemas", "pipewire", "wireplumber", "networkmanager", "upower", "polkit", "xdg-desktop-portal", "telorgon-file-explorer", "telorgon-settings-app", "telorgon-portal-picker"]
+files = ["/usr/bin/dconf", "/usr/share/glib-2.0/schemas/gschemas.compiled", "/usr/bin/pipewire", "/usr/bin/wireplumber", "/usr/bin/dbus-daemon", "/usr/sbin/NetworkManager"]

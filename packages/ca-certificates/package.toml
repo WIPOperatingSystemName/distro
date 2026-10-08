@@ -1,0 +1,32 @@
+schema = 1
+
+[package]
+name = "ca-certificates"
+version = "2026.09.25"
+revision = 1
+arch = "any"
+description = "Pinned Mozilla TLS root trust bundle from curl's CA extraction service"
+license = "MPL-2.0"
+
+[[sources]]
+name = "main"
+url = "https://curl.se/ca/cacert-2026-09-25.pem"
+filename = "cacert-2026-09-25.pem"
+format = "file"
+sha256 = "a41b5d356aea97a529fe27e0f7316d2f9d946d75927476cf9cf1b90637d00505"
+
+[[sources]]
+name = "license"
+url = "https://raw.githubusercontent.com/spdx/license-list-data/v3.27.0/text/MPL-2.0.txt"
+filename = "MPL-2.0.txt"
+format = "file"
+sha256 = "66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172"
+
+[dependencies]
+native = []
+target = []
+runtime = []
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

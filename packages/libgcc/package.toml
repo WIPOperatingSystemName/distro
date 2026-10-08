@@ -1,0 +1,25 @@
+schema = 1
+
+[package]
+name = "libgcc"
+version = "15.2.0"
+revision = 1
+arch = "x86_64"
+description = "Source-built GCC shared exception and compiler support runtime"
+license = "GPL-3.0-or-later WITH GCC-exception-3.1"
+url = "https://gcc.gnu.org/"
+
+[[sources]]
+name = "main"
+url = "https://ftp.gnu.org/gnu/gcc/gcc-15.2.0/gcc-15.2.0.tar.xz"
+filename = "gcc-15.2.0.tar.xz"
+sha256 = "438fd996826b0c82485a29da03a72d71d6e3541a83ec702df4271f6fe025d24e"
+
+[dependencies]
+native = []
+target = ["glibc"]
+runtime = ["glibc"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

@@ -1,0 +1,25 @@
+schema = 1
+
+[package]
+name = "linux"
+version = "6.12.57"
+revision = 3
+arch = "x86_64"
+description = "Source-built EFI kernel with QEMU DRM/input, systemd namespaces/cgroups and desktop FUSE support"
+license = "GPL-2.0-only"
+url = "https://www.kernel.org/"
+
+[[sources]]
+name = "main"
+url = "https://www.kernel.org/pub/linux/kernel/v6.x/linux-6.12.57.tar.xz"
+filename = "linux-6.12.57.tar.xz"
+sha256 = "165ca1c37c4607b90e731996b7c1e3311285167d13deeedf08f3f1f0b9d2541a"
+
+[dependencies]
+native = []
+target = []
+runtime = []
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

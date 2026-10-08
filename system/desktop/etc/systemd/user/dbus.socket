@@ -1,0 +1,9 @@
+[Unit]
+Description=User D-Bus socket
+
+[Socket]
+ListenStream=%t/bus
+SocketMode=0600
+
+[Install]
+WantedBy=sockets.target

@@ -1,0 +1,4 @@
+schema = 1
+name = "Custom Distro"
+description = "Source-built experimental console with Telorgon EFI and local pacman"
+packages = ["glibc", "busybox", "linux", "xz", "zlib", "openssl", "libarchive", "pacman"]

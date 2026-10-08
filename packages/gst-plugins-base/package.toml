@@ -1,0 +1,24 @@
+schema = 1
+
+[package]
+name = "gst-plugins-base"
+version = "1.28.7"
+revision = 2
+arch = "x86_64"
+description = "GStreamer discovery and playback foundations"
+license = "LGPL-2.1-or-later"
+
+[[sources]]
+name = "main"
+url = "https://gstreamer.freedesktop.org/src/gst-plugins-base/gst-plugins-base-1.28.7.tar.xz"
+filename = "gst-plugins-base-1.28.7.tar.xz"
+sha256 = "ed6e5410f496d171818763af2265e7977154bc7f9b827e98acf8c5bed21dd5a7"
+
+[dependencies]
+native = []
+target = ["glib", "gstreamer"]
+runtime = ["glib", "gstreamer"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

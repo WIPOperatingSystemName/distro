@@ -1,0 +1,24 @@
+schema = 1
+
+[package]
+name = "upower"
+version = "1.91.1"
+revision = 1
+arch = "x86_64"
+description = "Linux power device D-Bus service"
+license = "GPL-2.0-or-later"
+
+[[sources]]
+name = "main"
+url = "https://gitlab.freedesktop.org/upower/upower/-/archive/v1.91.1/upower-v1.91.1.tar.gz"
+filename = "upower-1.91.1.tar.gz"
+sha256 = "cd87801c8489778b76bbdcd4e03ae60b44ef5bcc2fed40332630fbadb4343517"
+
+[dependencies]
+native = []
+target = ["glib", "libgudev", "polkit", "systemd", "gettext"]
+runtime = ["glib", "libgudev", "polkit", "systemd"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

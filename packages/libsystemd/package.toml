@@ -1,0 +1,25 @@
+schema = 1
+
+[package]
+name = "libsystemd"
+version = "259.9"
+revision = 1
+arch = "x86_64"
+description = "Independent systemd public API library and development headers"
+license = "LGPL-2.1-or-later"
+url = "https://github.com/systemd/systemd/archive/refs/tags/v259.9.tar.gz"
+
+[[sources]]
+name = "main"
+url = "https://github.com/systemd/systemd/archive/refs/tags/v259.9.tar.gz"
+filename = "systemd-259.9.tar.gz"
+sha256 = "6ac77a1baf0539b835193eec46cdb1c73abb42d7f87aa977009150e9d8375757"
+
+[dependencies]
+native = []
+target = ["glibc", "libxcrypt", "pam", "util-linux", "libseccomp"]
+runtime = ["glibc"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

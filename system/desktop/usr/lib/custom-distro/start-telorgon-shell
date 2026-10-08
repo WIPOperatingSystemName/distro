@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+export PATH=/usr/bin:/bin
+logs="$HOME/.local/state/custom-distro/qualification"
+mkdir -p "$logs"
+export TELORGON_LATENCY_TRACE="$logs/latency.jsonl"
+exec /usr/bin/telorgon-session > "$logs/shell.log" 2>&1

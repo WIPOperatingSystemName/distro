@@ -1,0 +1,25 @@
+schema = 1
+
+[package]
+name = "util-linux"
+version = "2.42.4"
+revision = 1
+arch = "x86_64"
+description = "Mount/block libraries, getty, PAM login and core namespace utilities"
+license = "GPL-2.0-or-later AND LGPL-2.1-or-later AND BSD-3-Clause"
+url = "https://www.kernel.org/pub/linux/utils/util-linux/v2.42/util-linux-2.42.4.tar.xz"
+
+[[sources]]
+name = "main"
+url = "https://www.kernel.org/pub/linux/utils/util-linux/v2.42/util-linux-2.42.4.tar.xz"
+filename = "util-linux-2.42.4.tar.xz"
+sha256 = "fbd62a100ab7bb8746ba0661255c3c48185b1e9021507c624da01fbc696330ec"
+
+[dependencies]
+native = []
+target = ["glibc", "libxcrypt", "pam"]
+runtime = ["glibc", "libxcrypt", "pam"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

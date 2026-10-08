@@ -1,0 +1,39 @@
+name: Source bootstrap and package transactions
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          submodules: recursive
+      # Host seeds exist only in this disposable CI worker, not in target packages.
+      - name: Prepare declared build seeds
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends build-essential bison bc m4 perl autoconf automake libtool pkg-config meson ninja-build fakeroot zlib1g-dev xz-utils python3-jinja2
+      - run: python3 build.py validate
+      - run: python3 build.py fetch linux pacman --bootstrap
+      - run: python3 build.py bootstrap --jobs 4
+      - run: python3 build.py native-toolkit --fetch --jobs 4
+      - run: python3 build.py build linux pacman --jobs 4
+      - run: python3 -m unittest discover -s tests -v
+      # Runtime/receipt evidence only: this job does not sign or publish packages.
+      - name: Preserve verification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: source-runtime-evidence
+          if-no-files-found: warn
+          path: |
+            out/logs/
+            out/state/
+            out/bootstrap/work/stamps/
+            out/bootstrap/root/.bootstrap-validated.json
+            out/bootstrap/root/tools/pass2/.runtime-validated.json
+            out/native-toolkit/prefix/toolkit.json

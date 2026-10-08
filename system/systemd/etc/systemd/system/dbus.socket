@@ -1,0 +1,9 @@
+[Unit]
+Description=System D-Bus socket
+
+[Socket]
+ListenStream=/run/dbus/system_bus_socket
+SocketMode=0666
+
+[Install]
+WantedBy=sockets.target

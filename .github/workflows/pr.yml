@@ -1,0 +1,16 @@
+name: Catalog and tooling checks
+on:
+  pull_request:
+  push:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - run: python3 build.py validate
+      - run: python3 -m unittest discover -s tests -v

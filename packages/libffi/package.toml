@@ -1,0 +1,24 @@
+schema = 1
+
+[package]
+name = "libffi"
+version = "3.4.6"
+revision = 1
+arch = "x86_64"
+description = "Portable foreign function interface library"
+license = "MIT"
+
+[[sources]]
+name = "main"
+url = "https://github.com/libffi/libffi/releases/download/v3.4.6/libffi-3.4.6.tar.gz"
+filename = "libffi-3.4.6.tar.gz"
+sha256 = "b0dea9df23c863a7a50e825440f3ebffabd65df1497108e5d437747843895a4e"
+
+[dependencies]
+native = []
+target = ["glibc"]
+runtime = ["glibc"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

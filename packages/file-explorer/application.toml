@@ -1,0 +1,28 @@
+schema = 1
+
+[package]
+name = "telorgon-file-explorer"
+version = "0.1.0"
+revision = 2
+arch = "x86_64"
+description = "Telorgon file manager, download queue and FileChooser portal"
+license = "GPL-3.0-or-later"
+
+[source]
+kind = "local-content-snapshot"
+primary = "telorgon-file-explorer"
+projects = ["telorgon", "telorgon-file-explorer"]
+
+[build]
+adapter = "target-cargo"
+binary = "telorgon-file-explorer"
+
+[requirements]
+link_libraries = ["c", "m", "gcc_s"]
+pkg_config = []
+wayland_xml = false
+bindgen = false
+
+[runtime]
+packages = ["glibc", "libgcc", "libstdc++", "wayland", "libxkbcommon", "dbus", "curl", "ca-certificates", "xdg-utils", "wl-clipboard", "xdg-desktop-portal"]
+files = ["/usr/bin/curl", "/usr/bin/xdg-open", "/usr/bin/wl-copy", "/usr/bin/wl-paste"]

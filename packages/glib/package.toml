@@ -1,0 +1,24 @@
+schema = 1
+
+[package]
+name = "glib"
+version = "2.90.1"
+revision = 1
+arch = "x86_64"
+description = "GLib GObject GIO and D-Bus runtime"
+license = "LGPL-2.1-or-later"
+
+[[sources]]
+name = "main"
+url = "https://download.gnome.org/sources/glib/2.90/glib-2.90.1.tar.xz"
+filename = "glib-2.90.1.tar.xz"
+sha256 = "93c941aa17d5eb1d53fe838365f29a8b4e539c222a256d974ec8f30fc413e396"
+
+[dependencies]
+native = []
+target = ["glibc", "libffi", "pcre2", "zlib", "util-linux"]
+runtime = ["glibc", "libffi", "pcre2", "zlib", "util-linux"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

@@ -1,0 +1,36 @@
+#!/bin/sh
+set -eu
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+diagnose() {
+    systemctl show custom-distro-session-check.service -p MainPID -p SubState -p ExecMainStatus
+    journalctl -b --no-pager -u custom-distro-session-check.service -u user@1000.service -u systemd-logind.service -u user-runtime-dir@1000.service
+    ps
+    pid=$(systemctl show custom-distro-session-check.service -p MainPID --value)
+    if [ "$pid" -gt 0 ]; then
+        cat "/proc/$pid/wchan"
+        cat "/proc/$pid/status"
+    fi
+    echo CUSTOM_SYSTEMD_RUNTIME_FAILED
+}
+trap diagnose EXIT
+fail() { exit 1; }
+case "$(readlink /proc/1/exe)" in /usr/lib/systemd/systemd) ;; *) fail ;; esac
+for service in systemd-journald.service systemd-udevd.service systemd-logind.service dbus.service; do
+    systemctl is-active --quiet "$service" || fail
+done
+count=0
+while [ ! -s /run/user/1000/custom-session-ok ]; do
+    count=$((count + 1))
+    [ "$count" -lt 30 ] || fail
+    sleep 1
+done
+session=$(cat /run/user/1000/custom-session-ok)
+[ "$(loginctl show-session "$session" -p User --value)" = 1000 ] || fail
+busctl --system call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager ListSessions
+[ -c /dev/dri/card0 ] || fail
+[ -c /dev/input/event0 ] || fail
+[ -w /sys/fs/cgroup/cgroup.procs ] || fail
+echo CUSTOM_DISTRO_BOOT_OK
+echo CUSTOM_DISTRO_PERSISTENT_ROOT_OK
+trap - EXIT
+echo CUSTOM_SYSTEMD_RUNTIME_OK

@@ -1,0 +1,66 @@
+#!/bin/sh
+set -eu
+export PATH=/usr/bin:/bin
+export XDG_CURRENT_DESKTOP=telorgon-test-shell
+export XDG_SESSION_TYPE=wayland
+export DBUS_SESSION_BUS_ADDRESS=unix:path="$XDG_RUNTIME_DIR/bus"
+export LIBSEAT_BACKEND=seatd
+logs=/home/custom/.local/state/custom-distro/qualification
+mkdir -p "$logs"
+chmod 700 "$logs"
+diagnose() {
+    systemctl --user --failed --no-pager
+    for file in "$logs"/*.log; do
+        if [ -f "$file" ]; then
+            grep 'set_app_id\|set_title' "$file" || true
+            tail -n 80 "$file" || true
+        fi
+    done
+    echo CUSTOM_DESKTOP_USER_FAILED
+    echo CUSTOM_DESKTOP_SESSION_FAILED
+}
+trap diagnose EXIT
+count=0
+until busctl --user list > "$logs/user-bus.log" 2>&1; do
+    count=$((count + 1)); [ "$count" -lt 30 ]; sleep 1
+done
+systemctl --user import-environment XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_SESSION_ID XDG_SEAT XDG_VTNR LIBSEAT_BACKEND
+systemctl --user start telorgon-session.target
+systemctl --user is-active --quiet pipewire.service wireplumber.service telorgon-shell.service graphical-session.target
+shell=$(systemctl --user show telorgon-shell.service --property=MainPID --value)
+WAYLAND_DISPLAY=$(cat "$XDG_RUNTIME_DIR/custom-wayland-socket")
+export WAYLAND_DISPLAY
+if [ ! -S "$WAYLAND_DISPLAY" ]; then
+    ls -l "$XDG_RUNTIME_DIR"
+    echo CUSTOM_DESKTOP_SOCKET_MISSING
+    exit 1
+fi
+echo CUSTOM_DESKTOP_PHASE_SOCKET_READY
+sleep 2
+kill -0 "$shell"
+echo CUSTOM_DESKTOP_PHASE_SHELL_ALIVE
+echo CUSTOM_DESKTOP_PHASE_PORTAL_STARTED
+busctl --user get-property org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop org.freedesktop.portal.FileChooser version > "$logs/filechooser.log"
+echo CUSTOM_PORTAL_BROKER_OK
+WAYLAND_DEBUG=client /usr/bin/telorgon-file-explorer --show /home/custom > "$logs/files.log" 2>&1 &
+files=$!
+WAYLAND_DEBUG=client /usr/bin/telorgon-settings-app --page=network > "$logs/settings.log" 2>&1 &
+settings=$!
+count=0
+while ! grep -q 'set_title("Telorgon Files")' "$logs/files.log" || ! grep -q 'set_title("Telorgon Settings")' "$logs/settings.log" || ! grep -q 'wl_surface.*\.attach' "$logs/files.log" || ! grep -q 'wl_surface.*\.attach' "$logs/settings.log"; do
+    kill -0 "$shell"; kill -0 "$files"; kill -0 "$settings"
+    count=$((count + 1)); [ "$count" -lt 30 ]; sleep 1
+done
+echo CUSTOM_TELORGON_APP_WINDOWS_OK
+/usr/libexec/custom-distro/desktop-session-probe --timeout 40 --hold 8
+kill -0 "$shell"; kill -0 "$files"; kill -0 "$settings"
+echo CUSTOM_WAYLAND_LOG_BEGIN name=files
+head -n 1000 "$logs/files.log"
+echo CUSTOM_WAYLAND_LOG_END name=files
+echo CUSTOM_WAYLAND_LOG_BEGIN name=settings
+head -n 1000 "$logs/settings.log"
+echo CUSTOM_WAYLAND_LOG_END name=settings
+printf '%s\n' "$XDG_SESSION_ID" > "$XDG_RUNTIME_DIR/custom-desktop-ok"
+echo CUSTOM_DESKTOP_USER_OK
+trap - EXIT
+while true; do sleep 60; done

@@ -1,0 +1,26 @@
+[Unit]
+Description=Custom Distro desktop session
+Requires=systemd-logind.service dbus.service seatd.service custom-distro-desktop-caches.service
+After=systemd-logind.service dbus.service seatd.service systemd-user-sessions.service custom-distro-desktop-caches.service
+Conflicts=getty@tty1.service
+After=getty@tty1.service
+Before=graphical.target
+
+[Service]
+Type=exec
+User=custom
+Group=custom
+PAMName=login
+Environment=XDG_SESSION_TYPE=wayland
+Environment=XDG_SEAT=seat0
+Environment=XDG_VTNR=1
+Environment=LIBSEAT_BACKEND=seatd
+TTYPath=/dev/tty1
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+ExecStart=/usr/lib/custom-distro/start-desktop-session
+TimeoutStopSec=30
+
+[Install]
+WantedBy=graphical.target

@@ -1,0 +1,25 @@
+schema = 1
+
+[package]
+name = "shared-mime-info"
+version = "2.5.1"
+revision = 3
+arch = "x86_64"
+description = "Freedesktop MIME database and genuine cache generator"
+license = "GPL-2.0-or-later AND MIT"
+url = "https://gitlab.freedesktop.org/xdg/shared-mime-info/-/archive/2.5.1"
+
+[[sources]]
+name = "main"
+url = "https://gitlab.freedesktop.org/xdg/shared-mime-info/-/archive/2.5.1/shared-mime-info-2.5.1.tar.gz"
+filename = "shared-mime-info-2.5.1.tar.gz"
+sha256 = "ea248ea157b7fa0165f4fe282c84919fa84c3f175553642f229c8f1ab7539128"
+
+[dependencies]
+native = []
+target = ["glibc", "glib", "libxml2", "libstdc++", "gettext"]
+runtime = ["glibc", "glib", "libxml2", "libstdc++"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

@@ -1,0 +1,24 @@
+schema = 1
+
+[package]
+name = "gnupg"
+version = "2.5.24"
+revision = 1
+arch = "x86_64"
+description = "OpenPGP signature tools and local key operations"
+license = "GPL-3.0-or-later"
+
+[[sources]]
+name = "main"
+url = "https://www.gnupg.org/ftp/gcrypt/gnupg/gnupg-2.5.24.tar.bz2"
+filename = "gnupg-2.5.24.tar.bz2"
+sha256 = "bf149d01a2b9fcc0e4589b8ae8697d3d5c557ea48ed95a3fa55dd3b1187e6039"
+
+[dependencies]
+native = []
+target = ["glibc", "libgpg-error", "libassuan", "libgcrypt", "libksba", "npth", "zlib"]
+runtime = ["glibc", "libgpg-error", "libassuan", "libgcrypt", "libksba", "npth", "zlib"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

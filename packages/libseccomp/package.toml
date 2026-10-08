@@ -1,0 +1,25 @@
+schema = 1
+
+[package]
+name = "libseccomp"
+version = "2.6.1"
+revision = 1
+arch = "x86_64"
+description = "Syscall filtering library used by systemd service sandboxing"
+license = "LGPL-2.1-only"
+url = "https://github.com/seccomp/libseccomp/releases/download/v2.6.1/libseccomp-2.6.1.tar.gz"
+
+[[sources]]
+name = "main"
+url = "https://github.com/seccomp/libseccomp/releases/download/v2.6.1/libseccomp-2.6.1.tar.gz"
+filename = "libseccomp-2.6.1.tar.gz"
+sha256 = "501f66c667225d53791b97e1d7cf85ab764c297d04881f60f38f451c4b0ee1be"
+
+[dependencies]
+native = []
+target = ["glibc"]
+runtime = ["glibc"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

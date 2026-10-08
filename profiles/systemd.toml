@@ -1,0 +1,4 @@
+schema = 1
+name = "Custom Distro"
+description = "Experimental source-built systemd and regular-user PAM session qualification"
+packages = ["busybox", "linux", "pacman", "systemd"]

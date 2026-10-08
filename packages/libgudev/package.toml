@@ -1,0 +1,24 @@
+schema = 1
+
+[package]
+name = "libgudev"
+version = "238"
+revision = 1
+arch = "x86_64"
+description = "GObject bindings for Linux device discovery"
+license = "LGPL-2.1-or-later"
+
+[[sources]]
+name = "main"
+url = "https://download.gnome.org/sources/libgudev/238/libgudev-238.tar.xz"
+filename = "libgudev-238.tar.xz"
+sha256 = "61266ab1afc9d73dbc60a8b2af73e99d2fdff47d99544d085760e4fa667b5dd1"
+
+[dependencies]
+native = []
+target = ["glib", "libudev"]
+runtime = ["glib", "libudev"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]
