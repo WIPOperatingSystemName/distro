@@ -79,7 +79,7 @@ def build_identity(project: Path, recipe: Recipe, seed: dict, dependencies: list
     digest = hashlib.sha256()
     digest.update(json.dumps(seed, sort_keys=True).encode())
     digest.update(b"host-seed" if seed_build else b"target-bootstrap")
-    excluded_modules = {"cli.py", "boot.py", "media.py", "vm.py", "apps.py", "compose.py", "source_bundle.py", "guest_test.py", "signed_test.py", "bootstrap_toolkit.py"}
+    excluded_modules = {"cli.py", "boot.py", "media.py", "vm.py", "apps.py", "compose.py", "source_bundle.py", "guest_test.py", "signed_test.py", "bootstrap_toolkit.py", "vm_session.py", "deploy.py", "guest_agent.py", "incremental.py"}
     for tree in (recipe.path.parent, project / "src/distro_build"):
         for path in sorted(tree.rglob("*")):
             if path.is_file() and "__pycache__" not in path.parts and (tree == recipe.path.parent or path.name not in excluded_modules):

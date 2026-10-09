@@ -3,7 +3,7 @@ schema = 1
 [package]
 name = "telorgon-shell"
 version = "0.1.0"
-revision = 6
+revision = 10
 arch = "x86_64"
 description = "Custom Distro's Telorgon Wayland shell and session defaults"
 license = "GPL-3.0-or-later"

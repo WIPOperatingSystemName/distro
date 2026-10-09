@@ -3,7 +3,7 @@ schema = 1
 [package]
 name = "telorgon-settings-app"
 version = "0.1.0"
-revision = 3
+revision = 4
 arch = "x86_64"
 description = "Telorgon display, audio, network, power and personalization settings"
 license = "GPL-3.0-or-later"

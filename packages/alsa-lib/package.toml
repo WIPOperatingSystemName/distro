@@ -1,0 +1,25 @@
+schema = 1
+
+[package]
+name = "alsa-lib"
+version = "1.2.14"
+revision = 1
+arch = "x86_64"
+description = "Source-built ALSA userspace library and sound card configuration"
+license = "LGPL-2.1-or-later"
+url = "https://www.alsa-project.org/"
+
+[[sources]]
+name = "main"
+url = "https://www.alsa-project.org/files/pub/lib/alsa-lib-1.2.14.tar.bz2"
+filename = "alsa-lib-1.2.14.tar.bz2"
+sha256 = "be9c88a0b3604367dd74167a2b754a35e142f670292ae47a2fdef27a2ee97a32"
+
+[dependencies]
+native = []
+target = ["glibc"]
+runtime = ["glibc"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

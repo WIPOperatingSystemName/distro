@@ -3,7 +3,7 @@ schema = 1
 [package]
 name = "telorgon-portal-picker"
 version = "0.1.0"
-revision = 2
+revision = 3
 arch = "x86_64"
 description = "Telorgon compositor's screen-sharing consent picker"
 license = "GPL-3.0-or-later"

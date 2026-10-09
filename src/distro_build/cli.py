@@ -2,10 +2,15 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import sys
+import sysconfig
+import time
 import tomllib
 
 from .graph import plan, affected
@@ -44,13 +49,158 @@ def vm_timeout(value: str) -> int:
     return number
 
 
+class DevelopmentCache:
+    """Reuse completed local stages after checking input and output contents.
+
+    Only completed actions are recorded. Inventories cover file hashes,
+    replacements, modes, symlink targets and directory membership.
+    The caller serializes preparation with run.lock, releasing it before QEMU.
+    """
+
+    def __init__(self, project: Path, profile: str, *, verify: bool = False):
+        self.directory = project / "out/state/run" / profile
+        self.directory.mkdir(parents=True, exist_ok=True)
+        self.verify = verify
+
+    @staticmethod
+    def inventory(paths: list[Path]) -> str:
+        digest = hashlib.sha256()
+        excluded = {".git", "__pycache__", ".cache", "target", "vendor", "out"}
+        visited = set()
+
+        def visit(path: Path) -> None:
+            if path in visited:
+                return
+            visited.add(path)
+            try:
+                info = path.lstat()
+            except FileNotFoundError:
+                digest.update(json.dumps([str(path), "missing"]).encode())
+                return
+            row = [str(path), info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid]
+            if path.is_symlink():
+                row.append(os.readlink(path))
+            elif not path.is_dir():
+                row.extend([info.st_size, info.st_mtime_ns, info.st_ctime_ns])
+                if path.is_file():
+                    from .sources import sha256
+                    row.append(sha256(path))
+            digest.update(json.dumps(row).encode())
+            if path.is_symlink():
+                visit(path.resolve())
+            elif path.is_dir():
+                for child in sorted(path.iterdir()):
+                    if child.name not in excluded and child.suffix != ".pyc":
+                        visit(child)
+
+        for path in sorted(set(paths)):
+            visit(path)
+        return digest.hexdigest()
+
+    def run(self, name: str, inputs, outputs, action, *, options=None):
+        started = time.monotonic()
+        # Hash environment values without writing them (or credentials) to disk.
+        environment = {key: os.environ.get(key) for key in (
+            "PATH", "CC", "CXX", "AR", "AS", "LD", "CFLAGS", "CXXFLAGS", "CPPFLAGS", "LDFLAGS",
+            "PKG_CONFIG_PATH", "PKG_CONFIG_SYSROOT_DIR", "PKG_CONFIG_LIBDIR", "RUSTUP_HOME", "CARGO_HOME",
+            "RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "RUSTC", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "SOURCE_DATE_EPOCH")}
+        identity = hashlib.sha256(json.dumps({"schema": 1, "inputs": self.inventory(inputs()),
+            "options": options, "environment": environment}, sort_keys=True).encode()).hexdigest()
+        record = self.directory / f"{name}.json"
+        prior = None
+        if record.is_file():
+            try:
+                prior = json.loads(record.read_text())
+            except (ValueError, OSError):
+                pass
+        if not self.verify and isinstance(prior, dict) and prior.get("identity") == identity:
+            paths = outputs(prior.get("result"))
+            if paths and all(path.exists() for path in paths) and prior.get("outputs") == self.inventory(paths):
+                emit({"event": "stage-cached", "stage": name, "seconds": round(time.monotonic() - started, 2)})
+                return prior.get("result")
+        # A failed or interrupted action must not leave an older success reusable.
+        record.unlink(missing_ok=True)
+        emit({"event": "stage-start", "stage": name})
+        result = action()
+        current = hashlib.sha256(json.dumps({"schema": 1, "inputs": self.inventory(inputs()),
+            "options": options, "environment": environment}, sort_keys=True).encode()).hexdigest()
+        if current != identity:
+            raise BuildError(f"{name} inputs changed during preparation; rerun before testing")
+        paths = outputs(result)
+        if paths and all(path.exists() for path in paths):
+            temporary = record.with_suffix(".next")
+            temporary.write_text(json.dumps({"identity": identity, "outputs": self.inventory(paths),
+                                             "result": result}, indent=2) + "\n")
+            temporary.replace(record)
+        emit({"event": "stage-done", "stage": name, "seconds": round(time.monotonic() - started, 2)})
+        return result
+
+
+def package_outputs(project: Path, names: list[str], *, applications: bool = False) -> list[Path]:
+    paths = []
+    for name in names:
+        state = project / "out/state" / ("apps" if applications else "packages") / f"{name}.json"
+        paths.append(state)
+        if state.is_file():
+            paths.append(Path(json.loads(state.read_text())["path"]))
+    return paths
+
+
+def cached_package(project: Path, recipe, seed: dict, dependencies: list[Path], *, seed_build: bool = False):
+    from .runner import build_identity
+    from .sources import sha256
+    locks = project / "out/state/locks"
+    locks.mkdir(parents=True, exist_ok=True)
+    with (locks / f"{recipe.name}.lock").open("a") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        state = project / "out/state/packages" / f"{recipe.name}.json"
+        if not state.is_file():
+            return None
+        prior = json.loads(state.read_text())
+        artifact = Path(prior.get("path", ""))
+        identity = build_identity(project, recipe, seed, dependencies, project / "out/bootstrap/work/stamps", seed_build=seed_build)
+        if prior.get("build_identity") != identity or not artifact.is_file() or sha256(artifact) != prior.get("sha256"):
+            return None
+        return prior
+
+
+def package_dependencies(recipes: dict, recipe, artifacts: dict) -> list[Path]:
+    closure = plan(recipes, list(recipe.dependencies.get("target", ())), include_runtime=False)
+    if {"systemd", "libudev"} <= {dependency.name for dependency in closure}:
+        # systemd supplies the API and conflicts with the standalone eudev package.
+        closure = [dependency for dependency in closure if dependency.name != "libudev"]
+    return [Path(artifacts[dependency.name]["path"]) for dependency in closure]
+
+
+def reuse_package_set(project: Path, recipes: dict, ordered: list) -> bool:
+    """Check cache identities after the caller has verified the whole bootstrap.
+
+    This uses the package runner's identity and artifact checks, sharing the
+    already completed bootstrap audit rather than repeating it per package.
+    A miss falls back to the normal package builder.
+    """
+    from .runner import seed_report
+    if not ordered:
+        return False
+    seed = seed_report(project)
+    artifacts = {}
+    for recipe in ordered:
+        prior = cached_package(project, recipe, seed, package_dependencies(recipes, recipe, artifacts))
+        if prior is None:
+            return False
+        artifacts[recipe.name] = prior
+    emit({"event": "package-set-cached", "packages": len(artifacts)})
+    return True
+
+
 def build_and_run(project: Path, args: argparse.Namespace) -> int:
     """Build through the existing CLI stages, then boot the composed image."""
     from . import apps, vm, vm_session
     from .compose import console_image, runtime_packages
     from .runner import run
 
-    desktop = args.profile == "desktop-use"
+    started = time.monotonic()
+    desktop = args.profile in {"desktop-use", "desktop-dev"}
     if desktop and args.headless:
         raise BuildError("--headless requires --profile console or --profile systemd")
     if args.name and not desktop:
@@ -73,34 +223,92 @@ def build_and_run(project: Path, args: argparse.Namespace) -> int:
         providers={"libudev": "systemd"} if args.profile == "systemd" else {})
     online = [] if args.offline else ["--online"]
     sources = ["--source-root", str(source_root)]
-    step("doctor")
-    step("validate")
-    step("fetch", *packages, "--bootstrap", *(["--offline"] if args.offline else []))
-    step("bootstrap", "--jobs", jobs)
-    step("bootstrap", "--check")
-    step("native-toolkit", "--jobs", jobs, *([] if args.offline else ["--fetch"]))
-    step("build", *packages, "--jobs", jobs)
-    step("loader", *sources, *online)
-    if desktop:
-        run([sys.executable, str(project / "tools/compose-desktop-sdk.py")], project,
-            os.environ.copy(), project / "out/logs/desktop-sdk.log")
-        sdk = json.loads((project / "out/sdk/current.json").read_text())
-        step("apps", "prepare", *sources)
-        readiness = apps.preflight(project, Path(sdk["sysroot"]))
-        if not readiness["ready_to_build"]:
-            emit(readiness)
-            raise BuildError("desktop SDK preflight failed; see missing inputs above")
-        step("apps", "build", "--sysroot", sdk["sysroot"], "--jobs", jobs, *online)
+    cache = DevelopmentCache(project, args.profile, verify=args.verify)
+    output = project / "out"
+    engine = [project / "src/distro_build", project / "build.py"]
+    recipes = catalog(project)
+    ordered = plan(recipes, packages or sorted(recipes)) if recipes else []
+    names = [recipe.name for recipe in ordered]
+    bootstrap = [output / "bootstrap/root", output / "bootstrap/work/stamps"]
+    prefix = output / "native-toolkit/prefix"
+    toolkit = [prefix / name for name in ("bin", "lib", "include", "share", "toolkit.json", ".development-dependencies.json")]
+    seeds = [Path(path) for path in ("/usr/bin", "/usr/include", "/usr/lib/gcc",
+        "/usr/lib/x86_64-linux-gnu", "/usr/lib/python3/dist-packages", sysconfig.get_path("stdlib"),
+        sysconfig.get_path("purelib"), sys.executable)]
+    seeds += [Path(path) for command in ("gcc", "g++", "ld", "make", "bash", "tar", "xz", "perl", "meson",
+        "ninja", "pkg-config", "cmake", "autoconf", "automake", "libtoolize", "bison", "m4", "bc")
+        if (path := shutil.which(command))]
 
-    emit({"event": "stage", "command": ["image", "--profile", args.profile]})
-    report = console_image(project, profile_name=args.profile)
+    def essentials():
+        step("doctor")
+        step("validate")
+        step("fetch", *packages, "--bootstrap", *(["--offline"] if args.offline else []))
+        step("bootstrap", "--jobs", jobs)
+        step("bootstrap", "--check")
+        step("native-toolkit", "--jobs", jobs, *([] if args.offline else ["--fetch"]))
+        if not reuse_package_set(project, recipes, ordered):
+            step("build", *packages, "--jobs", jobs)
+
+    def essential_outputs(_=None):
+        return bootstrap + toolkit + [output / "sources/downloads", output / "native-toolkit/sources"] + package_outputs(project, names)
+
+    loader = [output / "loader/cargo-target/x86_64-unknown-uefi/release/boot-efi.efi",
+              output / "loader/loader-sources.json"]
+    from .boot import EFI_TOOLCHAIN, _git_metadata
+    rust = Path(os.environ.get("RUSTUP_HOME", str(Path.home() / ".rustup"))) / "toolchains" / f"{EFI_TOOLCHAIN}-x86_64-unknown-linux-gnu"
+    rust_seeds = [rust] + [Path(path) for command in ("cargo", "rustup") if (path := shutil.which(command))]
+    rust_seeds += [Path(path) for name in ("RUSTC", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER")
+                   if (value := os.environ.get(name)) and (path := shutil.which(value))]
+
+    # Serialize preparation, but release the lock before an interactive VM opens.
+    with (output / "state/run.lock").open("a") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        cache.run("essentials", lambda: engine + [project / "packages", project / "bootstrap", project / "profiles" / f"{args.profile}.toml"] + seeds,
+                  essential_outputs, essentials)
+        cache.run("loader", lambda: engine + [source_root / name for name in ("telorgon", "telorgon-bootloader")] + rust_seeds,
+                  lambda _: loader, lambda: step("loader", *sources, *online),
+                  options={name: _git_metadata(source_root / name) for name in ("telorgon", "telorgon-bootloader")})
+        if desktop:
+            sdk_record = output / "sdk/current.json"
+
+            def sdk_outputs(_):
+                return [sdk_record, Path(json.loads(sdk_record.read_text())["sysroot"])] if sdk_record.is_file() else [sdk_record]
+
+            cache.run("sdk", lambda: engine + [project / "tools/compose-desktop-sdk.py"] + essential_outputs(),
+                      sdk_outputs, lambda: run([sys.executable, str(project / "tools/compose-desktop-sdk.py")], project,
+                                              os.environ.copy(), output / "logs/desktop-sdk.log"))
+            sdk = json.loads(sdk_record.read_text())
+
+            def applications():
+                step("apps", "prepare", *sources)
+                readiness = apps.preflight(project, Path(sdk["sysroot"]))
+                if not readiness["ready_to_build"]:
+                    emit(readiness)
+                    raise BuildError("desktop SDK preflight failed; see missing inputs above")
+                step("apps", "build", "--sysroot", sdk["sysroot"], "--jobs", jobs, *online)
+
+            cache.run("apps", lambda: engine + [project / "packages"] + rust_seeds + sdk_outputs(None)
+                      + [source_root / name for name in apps.INPUTS],
+                      lambda _: package_outputs(project, list(apps.catalog(project)), applications=True), applications,
+                      options={name: _git_metadata(source_root / name) for name in apps.INPUTS})
+
+        def image():
+            emit({"event": "stage", "command": ["image", "--profile", args.profile]})
+            return console_image(project, profile_name=args.profile)
+
+        cache_inputs = lambda: engine + [project / "system", project / "profiles" / f"{args.profile}.toml"] + loader + package_outputs(project, names) + (
+            package_outputs(project, list(apps.catalog(project)), applications=True) if desktop else [])
+        report = cache.run("image", cache_inputs,
+                          lambda result: [Path(result["image"]["path"])] if result else [], image)
     emit({"event": "image", "path": report["image"]["path"], "sha256": report["image"]["sha256"]})
+    emit({"event": "ready-to-boot", "elapsed_seconds": round(time.monotonic() - started, 2)})
     image = Path(report["image"]["path"])
     if desktop:
         # Filesystem timestamps can change image bytes without changing the
         # build. Reuse that build's disk; isolate a different build's disk.
         name = args.name or f"test-{report['identity'][:16]}"
-        emit(vm_session.start(project, image, name=name))
+        options = {"development": True} if args.profile == "desktop-dev" else {}
+        emit(vm_session.start(project, image, name=name, **options))
         return 0
     output = args.output or project / "out/verification" / f"run-{args.profile}"
     if not output.is_absolute():
@@ -110,6 +318,8 @@ def build_and_run(project: Path, args: argparse.Namespace) -> int:
                     expect="CUSTOM_SYSTEMD_RUNTIME_OK" if args.profile == "systemd"
                     else "CUSTOM_DISTRO_PERSISTENT_ROOT_OK")
     emit(result)
+    emit({"event": "run-complete", "success": result["success"],
+          "elapsed_seconds": round(time.monotonic() - started, 2)})
     return 0 if result["success"] else 1
 
 
@@ -118,9 +328,10 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--project", type=Path, default=project_root())
     actions = command.add_subparsers(dest="command", required=True)
     action = actions.add_parser("run", help="Build the OS image from source and run it in QEMU")
-    action.add_argument("--profile", choices=("desktop-use", "systemd", "console"), default="desktop-use")
+    action.add_argument("--profile", choices=("desktop-use", "desktop-dev", "systemd", "console"), default="desktop-use")
     action.add_argument("--jobs", type=positive_integer, default=4)
     action.add_argument("--offline", action="store_true", help="Require verified cached sources and Cargo inputs")
+    action.add_argument("--verify", action="store_true", help="Run full build/input integrity checks instead of trusting local development stage receipts")
     action.add_argument("--source-root", type=Path, help="Source workspace override (default: sources/ submodules)")
     action.add_argument("--name", help="Resume a named desktop VM; default selects a VM for the newly built image")
     action.add_argument("--headless", action="store_true", help="Run a bounded console/systemd boot check without a window")
@@ -158,7 +369,7 @@ def parser() -> argparse.ArgumentParser:
     action.add_argument("--sha256")
     action.add_argument("--source-root", type=Path, help="Source workspace override (default: sources/ submodules)")
     action = actions.add_parser("image", help="Compose a source-built system profile")
-    action.add_argument("--profile", choices=("console", "systemd", "desktop", "desktop-use"), default="console")
+    action.add_argument("--profile", choices=("console", "systemd", "desktop", "desktop-use", "desktop-dev"), default="console")
     action.add_argument("--root", type=Path)
     action.add_argument("--test-upgrade", action="store_true")
     action.add_argument("--test-signed-upgrade", action="store_true", help="Build a disposable strict-signature positive/negative upgrade test image")
@@ -170,6 +381,9 @@ def parser() -> argparse.ArgumentParser:
     action.add_argument("--interactive", action="store_true", help="Open a QEMU window and keep it running after startup checks until you close it or press Ctrl+C")
     action.add_argument("--use", action="store_true", help="Use the normal desktop with a persistent VM disk, without boot assertions or test input")
     action.add_argument("--name", default="custom", help="Persistent VM name for --use")
+    action.add_argument("--development", action="store_true", help="Expose the private guest-agent channel for a desktop-dev image; requires --use")
+    action.add_argument("--audio", choices=("auto", "pulse", "none"), default="auto", help="Host sound backend for --use; auto detects WSLg/PulseAudio")
+    action.add_argument("--usb-camera", help="Pass a USB webcam attached to Linux/WSL into --use, identified by bus:address")
     action.add_argument("--output", type=Path)
     action.add_argument("--expect", default="CUSTOM_DISTRO_PERSISTENT_ROOT_OK")
     action.add_argument("--desktop-input", action="store_true", help="Send Q only after the real Wayland qualifier reports focus and initial presentation")
@@ -181,6 +395,15 @@ def parser() -> argparse.ArgumentParser:
     action.add_argument("--online", action="store_true")
     action.add_argument("--source-root", type=Path, help="Source workspace override (default: sources/ submodules)")
     action.add_argument("--jobs", type=int, default=4)
+    action = actions.add_parser("deploy", help="Build and install applications into a running named desktop-dev VM")
+    action.add_argument("names", nargs="+")
+    action.add_argument("--name", required=True, help="Running development VM name")
+    action.add_argument("--source-root", type=Path)
+    action.add_argument("--jobs", type=positive_integer, default=4)
+    action.add_argument("--online", action="store_true", help="Allow fetching locked Cargo dependencies")
+    action.add_argument("--build-profile", choices=("dev", "release"), default="dev")
+    action.add_argument("--no-restart", action="store_true", help="Install packages without restarting the desktop; reopen updated apps manually")
+    action.add_argument("--timeout", type=vm_timeout, default=120, help="Guest command deadline in seconds")
     return command
 
 
@@ -190,7 +413,7 @@ def main(argv: list[str] | None = None, *, quiet: bool = False) -> int:
     project = args.project.resolve()
     try:
         if args.command == "run":
-            if args.output and args.profile == "desktop-use":
+            if args.output and args.profile in {"desktop-use", "desktop-dev"}:
                 raise BuildError("--output requires --profile console or --profile systemd")
             return build_and_run(project, args)
         elif args.command == "doctor":
@@ -218,16 +441,19 @@ def main(argv: list[str] | None = None, *, quiet: bool = False) -> int:
                     sources += bootstrap_sources(project)
                 report({"verified_sources": fetch_all(sources, project / "out/sources/downloads", offline=args.offline, workers=args.workers)})
             else:
-                from .runner import build_package
+                from .runner import build_package, check_bootstrap, seed_report
+                if not args.seed:
+                    check_bootstrap(project, project / "out/bootstrap/root/tools")
+                seed = seed_report(project)
                 artifacts = {}
                 for recipe in ordered:
-                    closure = plan(recipes, list(recipe.dependencies.get("target", ())), include_runtime=False)
-                    if {"systemd", "libudev"} <= {dependency.name for dependency in closure}:
-                        # The selected systemd package supplies libudev and conflicts
-                        # with the standalone eudev package. Install one API provider.
-                        closure = [dependency for dependency in closure if dependency.name != "libudev"]
-                    dependencies = [Path(artifacts[dependency.name]["path"]) for dependency in closure]
-                    artifacts[recipe.name] = build_package(project, recipe, jobs=args.jobs, seed_build=args.seed, dependencies=dependencies)
+                    dependencies = package_dependencies(recipes, recipe, artifacts)
+                    prior = cached_package(project, recipe, seed, dependencies, seed_build=args.seed)
+                    if prior is not None:
+                        emit({"event": "cache-hit", "package": recipe.name, "path": prior["path"]})
+                        artifacts[recipe.name] = prior
+                    else:
+                        artifacts[recipe.name] = build_package(project, recipe, jobs=args.jobs, seed_build=args.seed, dependencies=dependencies)
                 report({"artifacts": artifacts})
         elif args.command == "bootstrap":
             from .runner import run
@@ -264,11 +490,21 @@ def main(argv: list[str] | None = None, *, quiet: bool = False) -> int:
             report(console_image(project, args.root, test_upgrade=args.test_upgrade, test_signed_upgrade=args.test_signed_upgrade,
                                test_pam_auth=args.test_pam_auth, profile_name=args.profile))
         elif args.command == "vm":
+            if not args.use and (args.audio != "auto" or args.usb_camera):
+                raise BuildError("--audio and --usb-camera require --use")
+            if args.development and not args.use:
+                raise BuildError("--development requires --use")
             if args.use:
                 if args.desktop_input or args.interactive or args.output:
                     raise BuildError("--use has its own persistent VM directory; omit --desktop-input, --interactive and --output")
                 from .vm_session import start
-                report(start(project, args.image or project / "out/images/custom-distro-desktop-use.img", name=args.name))
+                options = {"development": True} if args.development else {}
+                if args.audio != "auto":
+                    options["audio"] = args.audio
+                if args.usb_camera:
+                    options["usb_camera"] = args.usb_camera
+                default_image = "custom-distro-desktop-dev.img" if args.development else "custom-distro-desktop-use.img"
+                report(start(project, args.image or project / "out/images" / default_image, name=args.name, **options))
                 return 0
             from .vm import run
             output = args.output or project / "out/vm"
@@ -278,6 +514,11 @@ def main(argv: list[str] | None = None, *, quiet: bool = False) -> int:
                          desktop_input=args.desktop_input, interactive=args.interactive)
             report(result)
             return 0 if result["success"] else 1
+        elif args.command == "deploy":
+            from .deploy import deploy
+            report(deploy(project, args.names, name=args.name, source_root=args.source_root,
+                          jobs=args.jobs, offline=not args.online, profile=args.build_profile,
+                          restart=not args.no_restart, timeout=args.timeout, emit=emit))
         elif args.command == "apps":
             from . import apps
             if args.action == "plan":

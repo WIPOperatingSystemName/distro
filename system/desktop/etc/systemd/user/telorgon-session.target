@@ -2,4 +2,4 @@
 Description=Telorgon graphical session
 BindsTo=graphical-session.target telorgon-shell.service
 After=telorgon-shell.service
-Wants=pipewire.service wireplumber.service xdg-desktop-portal.service
+Wants=pipewire.service pipewire-pulse.service wireplumber.service xdg-desktop-portal.service

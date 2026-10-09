@@ -26,7 +26,7 @@ until busctl --user list > "$logs/user-bus.log" 2>&1; do
 done
 systemctl --user import-environment XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_SESSION_ID XDG_SEAT XDG_VTNR LIBSEAT_BACKEND
 systemctl --user start telorgon-session.target
-systemctl --user is-active --quiet pipewire.service wireplumber.service telorgon-shell.service graphical-session.target
+systemctl --user is-active --quiet pipewire.service pipewire-pulse.service wireplumber.service telorgon-shell.service graphical-session.target
 shell=$(systemctl --user show telorgon-shell.service --property=MainPID --value)
 WAYLAND_DISPLAY=$(cat "$XDG_RUNTIME_DIR/custom-wayland-socket")
 export WAYLAND_DISPLAY
