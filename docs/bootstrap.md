@@ -117,25 +117,15 @@ checks.
 
 ## Running the first build
 
-From the project directory:
+Complete the [host setup](build.md#host-setup), then run from the project directory:
 
 ```sh
-python3 build.py doctor
-python3 build.py validate
-python3 build.py fetch --bootstrap
-python3 build.py bootstrap --jobs 12
-python3 build.py native-toolkit --fetch --jobs 4
-python3 build.py build linux pacman --jobs 12
-python3 build.py loader
-python3 build.py image
-python3 build.py vm
+python3 build.py run --profile console --headless
 ```
 
-The download command needs network access once. Subsequent builds use verified
-cached archives. The loader builds a recorded snapshot of the pinned Telorgon
-projects and its pinned UEFI Rust compiler; it does not modify those projects.
-See the build report for the exact source/toolchain identity and the VM report
-for actual runtime evidence.
+This fetches verified sources, builds and checks the toolchain, builds the
+console runtime and Telorgon loader, composes the disk and checks its boot in
+QEMU. See the [build guide](build.md) for individual stages and offline operation.
 
 An individual bootstrap stage can be invoked for diagnosis:
 

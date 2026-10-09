@@ -1,6 +1,6 @@
 # Desktop session qualification
 
-The current local gate passed in QEMU/KVM against image SHA-256
+A prior local gate passed in QEMU/KVM against image SHA-256
 `8fd942e2489cfc1d9ba4761844ad6992e817e906e15e7ce0d40719007fa4488b`.
 See the [VM receipt](../out/verification/desktop-complete/result.json),
 [actual app protocol qualification](../out/verification/desktop-complete/windows.json)
@@ -10,6 +10,8 @@ keyboard delivery and compositor presentation/redraw proof. The screenshot
 shows the actual apps and the probe's second color pattern. Portal broker
 activation and the running network/power/polkit services are also checked;
 chooser completion, audio hardware and ScreenCast streaming are not qualified.
+These receipts apply to that image; rerun the [desktop gate](build.md#desktop-qualification)
+to qualify a new source combination.
 
 The initial source-built desktop profile uses Telorgon's existing CPU renderer
 with DRM/KMS dumb buffers. The recorded shell overlay changes `Renderer::Vulkan`
