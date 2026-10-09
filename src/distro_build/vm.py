@@ -216,6 +216,8 @@ def run(image: Path, output: Path, *, timeout: float = 180,
                "-drive", f"if=pflash,format=raw,file={private_variables}",
                "-drive", f"id=bootdisk,if=none,format=raw,snapshot=on,file={image}",
                "-device", "ide-hd,drive=bootdisk,bus=ide.0,bootindex=1",
+               "-object", "rng-random,id=entropy,filename=/dev/urandom",
+               "-device", "virtio-rng-pci,rng=entropy",
                "-device", "qemu-xhci,id=xhci", "-device", "usb-kbd,bus=xhci.0"]
     if runtime["data"]:
         command += ["-L", runtime["data"]]

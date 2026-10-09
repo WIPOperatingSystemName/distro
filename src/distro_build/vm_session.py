@@ -123,6 +123,8 @@ def start(project: Path, image: Path, *, name: str = "custom", display: str = "g
                    "-drive", f"if=pflash,format=raw,file={directory / 'OVMF_VARS.fd'}",
                    "-drive", f"id=bootdisk,if=none,format=raw,file={directory / 'disk.img'}",
                    "-device", "ide-hd,drive=bootdisk,bus=ide.0,bootindex=1",
+                   "-object", "rng-random,id=entropy,filename=/dev/urandom",
+                   "-device", "virtio-rng-pci,rng=entropy",
                    "-device", "qemu-xhci,id=xhci", "-device", "usb-kbd,bus=xhci.0",
                    "-device", "usb-tablet,bus=xhci.0", "-netdev", "user,id=network",
                    "-device", "virtio-net-pci,netdev=network"]

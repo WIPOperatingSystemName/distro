@@ -87,7 +87,10 @@ the image SHA recorded by the VM runner.
 The full source build uses substantial temporary space. The desktop job requires
 a freshly created disposable Linux x86_64 Debian/Ubuntu-style worker labelled
 `custom-distro-ephemeral`, at least 128 GiB free disk and 16 GiB RAM, an available
-Rustup seed, and Meson >=1.5 at `/usr/bin/meson` for pinned GdkPixbuf. Its host seed
+Rustup seed. Bootstrap installs source-pinned Meson 1.9.2 under
+`out/bootstrap/root/tools/native/bin/meson`; the host Meson version does not gate
+target builds. CI checks the bootstrap receipts and saves the selected tool
+paths, versions and provenance in `out/ci/native-inputs.json`. Its host seed
 setup also installs CMake and libclang for actual application build generators.
 Select 2, 4 or 8 compile jobs to fit the worker; 4 is the default. Destroy the worker
 after the job. Never attach this label to a persistent privileged workstation or
@@ -100,6 +103,8 @@ The same desktop preparation can be replayed locally after importing the bundle:
 python3 build.py validate
 python3 build.py fetch --bootstrap
 python3 build.py bootstrap --jobs 4
+python3 build.py bootstrap --check
+python3 build.py doctor
 python3 build.py native-toolkit --fetch --jobs 4
 python3 build.py build --jobs 4
 python3 tools/compose-desktop-sdk.py
@@ -115,8 +120,10 @@ python3 build.py vm --image out/images/custom-distro-desktop.img --expect CUSTOM
 python3 tools/check-wayland-window.py --vm-report out/verification/desktop-final/result.json --output out/verification/desktop-final/windows.json
 ```
 
-The workflow also runs target API/TLS/OpenPGP/private IPC qualifiers and console,
-signed upgrade and systemd VM gates before the desktop test. Its dedicated PAM
+The workflow builds the EFI loader and runs target API/TLS/OpenPGP/private IPC
+qualifiers and console, signed upgrade and systemd VM gates before compiling the
+desktop applications. A later app failure therefore retains the independent
+runtime receipts. Its dedicated PAM
 authentication gate compiles `tools/build-pam-auth-probe.py --make-fixture`, creates
 a private `image --profile systemd --test-pam-auth`, and requires the completed
 `CUSTOM_PAM_AUTHENTICATION_OK` guest assertion. That fixture verifies rejection
@@ -126,7 +133,8 @@ original locked shadow entry before success. Passwords travel through private
 stdin files, never command arguments or shell tracing. They remain isolated in
 the disposable worker and guest; this gate does not enroll an actual user account.
 
-The workflow uploads explicit public receipts and logs, excluding raw disk images,
+The workflow uploads explicit public receipts, selected native tool reports and
+application build logs, excluding raw disk images,
 OS package archives, PAM image build manifests and credential directories, signing
 key directories, private Cargo state and test TLS keys. The PAM probe and VM
 receipts contain hashes, statuses and paths rather than credential values. Destroy
@@ -135,3 +143,20 @@ successful candidate establishes its recorded test scope; a console result does
 not establish desktop behavior, and neither profile establishes physical wireless,
 audio, an installer, release signing or channel promotion. A separate authorized
 release service still owns production keys and publication.
+
+## Current desktop source compatibility
+
+The 2026-10-08 local WSL2 build completed all 72 runtime recipes, passed 97 tests
+and booted the systemd image in a GTK window through WSLg. Its exact-image result
+is `out/verification/systemd-wsl-rng/result.json`; the build summary is
+`out/verification/build-result.json`. These ignored files are local evidence.
+
+At the current pins, Telorgon `880abac6ae0a3e79856dba0001926c01e089ba65` lacks
+the `desktop-settings-linux` feature and `services::desktop_settings` API required
+by Shell `87a2744533c0703ed54eb63f5637b0021aaa0784` and Settings
+`ce3b721563a7e071dcfaf512c981e2cbb5371c52`. `apps check` verifies SDK inputs;
+`ready_to_build: true` does not establish Rust feature or API compatibility.
+The app build stops at Cargo feature resolution. Matching source revisions or
+reviewed upstream compatibility changes are required before composing a new
+`desktop-use` image. Remote CI and desktop rendering remain unverified for
+this source combination.

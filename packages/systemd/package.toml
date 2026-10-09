@@ -3,7 +3,7 @@ schema = 1
 [package]
 name = "systemd"
 version = "259.9"
-revision = 3
+revision = 5
 arch = "x86_64"
 description = "Service manager, udev, journald, logind and PAM session integration"
 license = "LGPL-2.1-or-later AND GPL-2.0-or-later"
