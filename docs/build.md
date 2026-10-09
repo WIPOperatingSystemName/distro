@@ -91,9 +91,11 @@ builds independently of the application stage.
 
 After a successful desktop build, QEMU starts a local `custom` session. Open
 File Explorer and Settings from its launcher; close QEMU or press Ctrl+C to stop.
-The default VM name is derived from the built image digest, so a changed image
-gets a separate disk. Files and settings persist when reopening the same image.
-VM files live under `out/vms/test-<digest>/`.
+The default VM name uses the first 16 characters of the stable image build
+identity, which records the package, loader and policy inputs. Rebuilding the
+same inputs reopens the saved disk even when filesystem timestamps change the
+image's byte digest. A different build identity gets a separate disk. VM files
+live under `out/vms/test-<identity>/`.
 
 Use `run --name my-test` to deliberately reuse a named desktop disk, including
 after rebuilding its base. To reopen it without building:

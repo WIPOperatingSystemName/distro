@@ -90,8 +90,9 @@ def build_and_run(project: Path, args: argparse.Namespace) -> int:
     emit({"event": "image", "path": report["image"]["path"], "sha256": report["image"]["sha256"]})
     image = Path(report["image"]["path"])
     if desktop:
-        # A rebuilt image must not silently open an older saved desktop disk.
-        name = args.name or f"test-{report['image']['sha256'][:16]}"
+        # Filesystem timestamps can change image bytes without changing the
+        # build. Reuse that build's disk; isolate a different build's disk.
+        name = args.name or f"test-{report['identity'][:16]}"
         emit(vm_session.start(project, image, name=name))
         return 0
     output = args.output or project / "out/verification" / f"run-{args.profile}"

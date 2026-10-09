@@ -1,5 +1,6 @@
 """The build-and-run workflow must stop on failure and boot its actual output."""
 from contextlib import ExitStack
+import fcntl
 import io
 import json
 from pathlib import Path
@@ -10,6 +11,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from distro_build import apps, cli, compose, runner, vm, vm_session
+from distro_build.boot import sha256
 
 
 class RunTests(unittest.TestCase):
@@ -30,10 +32,11 @@ class RunTests(unittest.TestCase):
         (sdk / "current.json").write_text(json.dumps({"sysroot": str(self.sysroot)}))
         self.image = self.project / "out/images/objects/new-image.img"
         self.digest = "a" * 64
+        self.identity = "c" * 64
         self.entry = cli.main
         self.events = []
 
-    def invoke(self, *arguments, fail_stage=None, sdk_ready=True, boot_ok=True):
+    def invoke(self, *arguments, fail_stage=None, sdk_ready=True, boot_ok=True, desktop_start=None):
         def stage(argv, *, quiet):
             self.assertTrue(quiet)
             self.assertEqual(argv[:2], ["--project", str(self.project)])
@@ -42,7 +45,7 @@ class RunTests(unittest.TestCase):
 
         def image(*args, **kwargs):
             self.events.append(["compose", kwargs["profile_name"]])
-            return {"image": {"path": str(self.image), "sha256": self.digest}}
+            return {"identity": self.identity, "image": {"path": str(self.image), "sha256": self.digest}}
 
         with ExitStack() as stack:
             stack.enter_context(patch.object(cli, "main", side_effect=stage))
@@ -52,7 +55,8 @@ class RunTests(unittest.TestCase):
             stack.enter_context(patch.object(compose, "console_image", side_effect=image))
             stack.enter_context(patch.object(runner, "run"))
             stack.enter_context(patch.object(apps, "preflight", return_value={"ready_to_build": sdk_ready}))
-            self.desktop = stack.enter_context(patch.object(vm_session, "start", return_value={"exit_code": 0}))
+            self.desktop = stack.enter_context(patch.object(vm_session, "start", side_effect=desktop_start,
+                                                          return_value={"exit_code": 0}))
             self.boot = stack.enter_context(patch.object(vm, "run", return_value={"success": boot_ok}))
             self.stderr = stack.enter_context(patch("sys.stderr", new=io.StringIO()))
             return self.entry(["--project", str(self.project), "run", *arguments])
@@ -63,15 +67,49 @@ class RunTests(unittest.TestCase):
         self.assertIn(["bootstrap", "--check"], self.events)
         self.assertIn(["build", "--jobs", "4"], self.events)
         self.assertIn(["apps", "build", "--sysroot", str(self.sysroot), "--jobs", "4", "--online"], self.events)
-        self.desktop.assert_called_once_with(self.project, self.image, name="test-" + self.digest[:16])
+        self.desktop.assert_called_once_with(self.project, self.image, name="test-" + self.identity[:16])
         self.boot.assert_not_called()
 
-    def test_new_image_digest_selects_a_different_default_saved_disk(self):
+    def test_changed_build_identity_selects_a_different_default_saved_disk(self):
         self.invoke()
         first = self.desktop.call_args.kwargs["name"]
-        self.digest = "b" * 64
+        self.identity = "d" * 64
         self.invoke()
         self.assertNotEqual(first, self.desktop.call_args.kwargs["name"])
+
+    def test_recomposed_image_preserves_saved_guest_data_for_the_same_build(self):
+        self.image.parent.mkdir(parents=True)
+        self.image.write_bytes(b"Synthetic disk with first filesystem timestamps")
+        code = self.project / "out/OVMF_CODE.fd"
+        code.write_bytes(b"firmware code fixture")
+        variables = self.project / "out/OVMF_VARS.fd"
+        variables.write_bytes(b"firmware variables fixture")
+        runtime = {"code": str(code), "vars": str(variables)}
+
+        def initialize(project, image, *, name):
+            directory, paths = vm_session.prepare(project, image, name, runtime)
+            with paths["lock"].open("a") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return vm_session.initialize(directory, image, runtime)
+
+        # Real private-file/state lifecycle; synthetic disks are not bootable.
+        # Disk-format checks and QEMU launch are covered by separate tests.
+        with patch.object(vm_session, "validate_disk"):
+            self.digest = sha256(self.image)
+            self.assertEqual(self.invoke(desktop_start=initialize), 0)
+            first_name = self.desktop.call_args.kwargs["name"]
+            directory = self.project / "out/vms" / first_name
+            original_state = (directory / "state.json").read_bytes()
+            (directory / "disk.img").write_bytes(b"saved guest files and settings")
+            (directory / "OVMF_VARS.fd").write_bytes(b"saved guest firmware settings")
+            self.image.write_bytes(b"Synthetic disk with different filesystem timestamps")
+            self.digest = sha256(self.image)
+            self.assertNotEqual(json.loads(original_state)["base_image_sha256"], self.digest)
+            self.assertEqual(self.invoke(desktop_start=initialize), 0)
+        self.assertEqual(self.desktop.call_args.kwargs["name"], first_name)
+        self.assertEqual((directory / "disk.img").read_bytes(), b"saved guest files and settings")
+        self.assertEqual((directory / "OVMF_VARS.fd").read_bytes(), b"saved guest firmware settings")
+        self.assertEqual((directory / "state.json").read_bytes(), original_state)
 
     def test_explicit_name_preserves_the_chosen_disk(self):
         self.assertEqual(self.invoke("--name", "my-test"), 0)
