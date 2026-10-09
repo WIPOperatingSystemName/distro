@@ -1,7 +1,9 @@
 # Custom Distro boot media
 
-For ordinary local use, `build.py vm --use` launches the `desktop-use` image
-with a writable private disk and OVMF variables retained under `out/vms/custom`.
+Use `python3 build.py run` to build and open the normal desktop; see the
+[build guide](build.md). Its VM name is derived from the image digest so a
+changed image gets a separate writable disk and OVMF variables under `out/vms/`.
+`build.py vm --use` opens an already-built desktop using the saved `custom` VM.
 It runs until the user closes QEMU, permits guest reboot, supplies a USB tablet
 and keyboard, and attaches a virtio network adapter to QEMU user networking.
 It does not inspect guest success markers or inject test input. The normal

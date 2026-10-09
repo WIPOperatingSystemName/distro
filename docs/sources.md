@@ -23,10 +23,9 @@ git submodule status
 git ls-files --stage sources/
 ```
 
-The initial pins use the organization repositories' `main` commits observed on
-2026-10-08. At that point GitHub reported no published releases or tags in those
-repositories. These are immutable source selections, without a claim of release
-qualification. The index entries with mode `160000` are the authoritative pins.
+The index entries with mode `160000` are the authoritative pins. Source
+selection and runtime qualification are separate; use the image reports to
+identify the actual inputs of a tested build.
 
 `apps prepare`, `loader` and `source-bundle export` default to `sources/`. They
 copy inputs into `out/`, preserve Cargo locks, record content hashes and Git
@@ -38,7 +37,7 @@ To select a reviewed release, fetch and check out its tag or full commit in the
 relevant submodule, then stage that directory in the parent repository:
 
 ```sh
-git -C sources/telorgon-file-explorer fetch origin <reviewed-tag-or-commit>
+git -C sources/telorgon-file-explorer fetch origin '<reviewed-tag-or-commit>'
 git -C sources/telorgon-file-explorer checkout --detach FETCH_HEAD
 git add sources/telorgon-file-explorer
 python3 build.py validate
