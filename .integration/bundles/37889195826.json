@@ -1,0 +1,59 @@
+{
+  "controller_sha": "57fd88dc383e80738a07a5512dfb057a0803bfeb",
+  "digest": "0e0565ed25895fc6017d54a581dcf6d4db12e0db85405a7bd700cf0017b62c31",
+  "distro_base": "8b63b96fe8b8180c1a1ee284cabb5e69dfb3030b",
+  "pins": {
+    "bootloader": "e133cb537a8ea9a8060422aaa35fedc50e53bb55",
+    "file-explorer": "94a00d1e3dffe498c3962723acbf6dd78dd91d63",
+    "portal-picker": "036e19ccff2d1b3936fdf68fc10ab0bd77858893",
+    "settings": "aa56bc4627e0c6277abef73dcad407ba90534f90",
+    "shell": "aed4e1d9cdc8edb3edb4e41dc41918f1d39c8a13",
+    "telorgon": "f43d104bce6483806b23c3c024c5f15a0e23cc09"
+  },
+  "prs": [
+    {
+      "base": "ae43b55d92bd65e6f2f65cd32b59d6c6553a8889",
+      "head": "f43d104bce6483806b23c3c024c5f15a0e23cc09",
+      "number": 1,
+      "repository": "telorgon",
+      "tree": "591affc701ed4f158719d5c2665b20e3badcc32a"
+    },
+    {
+      "base": "f7241018be7edb20fc27e5a638eea3e0c42137d6",
+      "head": "e133cb537a8ea9a8060422aaa35fedc50e53bb55",
+      "number": 1,
+      "repository": "bootloader",
+      "tree": "9c38453708d703046beaaf30d43df23962cda78e"
+    },
+    {
+      "base": "fdb663fff41f7bf8a09e9e9ec4feaaea874ca987",
+      "head": "94a00d1e3dffe498c3962723acbf6dd78dd91d63",
+      "number": 1,
+      "repository": "file-explorer",
+      "tree": "8c21fa047881da17d64ea87965eddf1f6578d798"
+    },
+    {
+      "base": "882e59faa485b6baf3478796f0173e43e41de72a",
+      "head": "036e19ccff2d1b3936fdf68fc10ab0bd77858893",
+      "number": 1,
+      "repository": "portal-picker",
+      "tree": "02de63380a24512d3e615cdd2e92b2115fee3099"
+    },
+    {
+      "base": "ce3b721563a7e071dcfaf512c981e2cbb5371c52",
+      "head": "aa56bc4627e0c6277abef73dcad407ba90534f90",
+      "number": 1,
+      "repository": "settings",
+      "tree": "ed42b2067cd4420f5e1b2a61f8d7ad9219a7354d"
+    },
+    {
+      "base": "87a2744533c0703ed54eb63f5637b0021aaa0784",
+      "head": "aed4e1d9cdc8edb3edb4e41dc41918f1d39c8a13",
+      "number": 1,
+      "repository": "shell",
+      "tree": "c6b2913068e5dce8ee0aae5ea09454f6e895987c"
+    }
+  ],
+  "run_id": 37889195826,
+  "schema": 1
+}
