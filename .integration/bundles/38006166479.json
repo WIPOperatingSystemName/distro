@@ -1,0 +1,31 @@
+{
+  "controller_sha": "349769f7b72792a15b4e9efe1ba068137575898c",
+  "digest": "df2f89edc714988cf26379c69b5dcf3a7e4160003d990276dbbe3a22d1a11a02",
+  "distro_base": "155464f61b93f4f72415154a3241f5fddba6d907",
+  "pins": {
+    "bootloader": "0701dfc3ce542cd69f5a7413a06ea132bf5dd84d",
+    "file-explorer": "0fe09d59ab83ff9f554ffa2d79cfa04eebce8bb1",
+    "portal-picker": "bd6b47976c4d6331023920e90ef1031ad6d0d059",
+    "settings": "43ac44e6aa9d720a650dd40bd1896664f4423c8a",
+    "shell": "f5d894997826ffaa93014179b785ff65e4bf6ec3",
+    "telorgon": "63cc314b22a3f497d8b3c5b192ed367070e99da4"
+  },
+  "prs": [
+    {
+      "base": "b0ddfa10c3352cebb25b4cc3fafb2a641baa2ec0",
+      "head": "f5d894997826ffaa93014179b785ff65e4bf6ec3",
+      "number": 3,
+      "repository": "shell",
+      "tree": "a06120bdce7a14fe888f176a9e6037f2e33dbac7"
+    },
+    {
+      "base": "155464f61b93f4f72415154a3241f5fddba6d907",
+      "head": "2c1eb2338a7fefb0afb4b1eb5122f95b784ff147",
+      "number": 15,
+      "repository": "distro",
+      "tree": "e505a2d98391b6ac88e5c5729345231cd4e0be75"
+    }
+  ],
+  "run_id": 38006166479,
+  "schema": 1
+}
