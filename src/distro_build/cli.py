@@ -37,6 +37,13 @@ def positive_integer(value: str) -> int:
     return number
 
 
+def vm_timeout(value: str) -> int:
+    number = positive_integer(value)
+    if number > 3600:
+        raise argparse.ArgumentTypeError("must be between 1 and 3600 seconds")
+    return number
+
+
 def build_and_run(project: Path, args: argparse.Namespace) -> int:
     """Build through the existing CLI stages, then boot the composed image."""
     from . import apps, vm, vm_session
@@ -117,7 +124,7 @@ def parser() -> argparse.ArgumentParser:
     action.add_argument("--source-root", type=Path, help="Source workspace override (default: sources/ submodules)")
     action.add_argument("--name", help="Resume a named desktop VM; default selects a VM for the newly built image")
     action.add_argument("--headless", action="store_true", help="Run a bounded console/systemd boot check without a window")
-    action.add_argument("--timeout", type=positive_integer, default=600, help="Console/systemd startup deadline in seconds")
+    action.add_argument("--timeout", type=vm_timeout, default=600, help="Console/systemd startup deadline (1–3600 seconds)")
     action.add_argument("--output", type=Path, help="Console/systemd boot evidence directory")
     actions.add_parser("doctor", help="Audit host seed tools and environment")
     actions.add_parser("validate", help="Validate package recipes and dependency graph")

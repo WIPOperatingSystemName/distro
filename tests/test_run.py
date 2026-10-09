@@ -179,6 +179,19 @@ class RunTests(unittest.TestCase):
             self.assertEqual(self.entry(["doctor"], quiet=True), 1)
             self.assertIn("missing seed", stderr.getvalue())
 
+    def test_timeout_limits_are_checked_before_building(self):
+        for profile in ("console", "systemd"):
+            with self.subTest(profile=profile):
+                with self.assertRaises(SystemExit) as error:
+                    self.invoke("--profile", profile, "--timeout", "7200")
+                self.assertEqual(error.exception.code, 2)
+                self.assertEqual(self.events, [])
+                self.boot.assert_not_called()
+        for timeout in (1, 3600):
+            with self.subTest(timeout=timeout):
+                self.assertEqual(self.invoke("--profile", "console", "--timeout", str(timeout)), 0)
+                self.assertEqual(self.boot.call_args.kwargs["timeout"], timeout)
+
     def test_nonpositive_jobs_and_deadlines_are_rejected(self):
         for flag in ("--jobs", "--timeout"):
             with self.subTest(flag=flag), patch("sys.stderr", new=io.StringIO()):
