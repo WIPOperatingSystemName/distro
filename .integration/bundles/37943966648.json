@@ -1,0 +1,66 @@
+{
+  "controller_sha": "349769f7b72792a15b4e9efe1ba068137575898c",
+  "digest": "5805f693f15b20586b4191c38073f5f9e0199f04b39b739e06e4f09384ce5dac",
+  "distro_base": "0590905bb0fbf8e54076691c98244c56803c0d2c",
+  "pins": {
+    "bootloader": "0701dfc3ce542cd69f5a7413a06ea132bf5dd84d",
+    "file-explorer": "0fe09d59ab83ff9f554ffa2d79cfa04eebce8bb1",
+    "portal-picker": "bd6b47976c4d6331023920e90ef1031ad6d0d059",
+    "settings": "43ac44e6aa9d720a650dd40bd1896664f4423c8a",
+    "shell": "f0ccebaf6fab971203f7f58c6557a703286ab829",
+    "telorgon": "63cc314b22a3f497d8b3c5b192ed367070e99da4"
+  },
+  "prs": [
+    {
+      "base": "363c3f3b4b4fcaa5fbee2977e37d5eaea025b987",
+      "head": "63cc314b22a3f497d8b3c5b192ed367070e99da4",
+      "number": 2,
+      "repository": "telorgon",
+      "tree": "6e8c6e2c94b9448904b0e51c545f8372921c9bcd"
+    },
+    {
+      "base": "06b09b0dc41988401f9bea855b9b30e3ffa876e7",
+      "head": "0701dfc3ce542cd69f5a7413a06ea132bf5dd84d",
+      "number": 2,
+      "repository": "bootloader",
+      "tree": "e317ec53f1fad5306776a776316767f9f7594663"
+    },
+    {
+      "base": "6d7ff02341777b7928ee3f6e476f328580fd8947",
+      "head": "f0ccebaf6fab971203f7f58c6557a703286ab829",
+      "number": 2,
+      "repository": "shell",
+      "tree": "23c7ea1dfee935d741980254ed24df17a013c6c0"
+    },
+    {
+      "base": "6e3c223f0448b1fc41eba2e180fe55d1a11acee6",
+      "head": "0fe09d59ab83ff9f554ffa2d79cfa04eebce8bb1",
+      "number": 2,
+      "repository": "file-explorer",
+      "tree": "107350d219a3f43f3026e5c809f9410cfa500819"
+    },
+    {
+      "base": "2078e8b15e2c06f14fadb4ecd9ac846031257552",
+      "head": "43ac44e6aa9d720a650dd40bd1896664f4423c8a",
+      "number": 2,
+      "repository": "settings",
+      "tree": "c504e075517fedafdb83964aa700fe6462aa3636"
+    },
+    {
+      "base": "c301357ddc11efa38feab101c381b599ef8b1df3",
+      "head": "bd6b47976c4d6331023920e90ef1031ad6d0d059",
+      "number": 2,
+      "repository": "portal-picker",
+      "tree": "5121297201c2775de405700dfdecbb4173e23cc3"
+    },
+    {
+      "base": "0590905bb0fbf8e54076691c98244c56803c0d2c",
+      "head": "694788eb809040c164767683b759340a4f96982c",
+      "number": 6,
+      "repository": "distro",
+      "tree": "12a3e8b24a1d6be1b4da9c91b79b6d9b8f3b340e"
+    }
+  ],
+  "run_id": 37943966648,
+  "schema": 1
+}
