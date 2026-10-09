@@ -35,14 +35,24 @@ def run(arguments: list[str], cwd: Path, env: dict[str, str], log: Path) -> None
             raise BuildError(f"command exited {code}; log: {log}\n{tail}")
 
 
-def seed_report() -> dict:
-    report = {"kind": "declared-host-seed", "tools": {}}
+def seed_report(project: Path | None = None) -> dict:
+    project = Path(project or Path(__file__).resolve().parents[2])
+    native_meson = project / "out/bootstrap/root/tools/native/bin/meson"
+    report = {"kind": "declared-native-inputs", "tools": {}}
     for command in ("python3", "gcc", "g++", "ld", "make", "bash", "tar", "xz", "perl", "meson", "ninja", "pkg-config"):
-        executable = shutil.which(command)
+        executable = str(native_meson) if command == "meson" and native_meson.is_file() else shutil.which(command)
         if not executable:
             raise BuildError(f"missing host seed tool: {command}")
         version = subprocess.run([executable, "--version"], capture_output=True, text=True, timeout=10)
         report["tools"][command] = {"path": executable, "sha256": sha256(Path(executable)), "version": version.stdout.splitlines()[0] if version.stdout else version.stderr.splitlines()[0]}
+    if native_meson.is_file():
+        stamp = project / "out/bootstrap/work/stamps/meson-native.json"
+        if not stamp.is_file():
+            raise BuildError("private Meson lacks a bootstrap receipt; run bootstrap first")
+        record = json.loads(stamp.read_text())
+        report["bootstrap_tools"] = {"meson": {"fingerprint": record["fingerprint"],
+            "artifact_fingerprint": record["artifact_fingerprint"], "sources": record["identity"]["sources"],
+            "scope": "source-built native generator; excluded from target packages"}}
     for command in ("cmake", "autoconf", "automake", "libtoolize", "bison", "m4", "bc"):
         executable = shutil.which(command)
         report["tools"][command] = ({"available": True, "path": executable, "sha256": sha256(Path(executable))}
@@ -105,6 +115,9 @@ def check_bootstrap(project: Path, tools: Path) -> None:
         arguments += ["--stage", "gcc-pass2"]
     if (output / "bootstrap/work/stamps/gperf-native.json").is_file():
         arguments += ["--stage", "gperf-native"]
+    if ((output / "bootstrap/work/stamps/meson-native.json").is_file()
+            or (tools / "native/bin/meson").is_file()):
+        arguments += ["--stage", "meson-native"]
     run(arguments, project, {"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C", "TZ": "UTC"}, output / "logs/bootstrap-check.log")
 
 
@@ -132,7 +145,7 @@ def _build_package(project: Path, recipe: Recipe, *, jobs: int, seed_build: bool
         raise BuildError("target compiler missing; run bootstrap first, or explicitly use --seed for development-only artifacts")
     if not seed_build:
         check_bootstrap(project, tools)
-    seed = seed_report()
+    seed = seed_report(project)
     identity = build_identity(project, recipe, seed, dependencies or [], output / "bootstrap/work/stamps", seed_build=seed_build)
     state = output / "state/packages" / f"{recipe.name}.json"
     if state.exists():

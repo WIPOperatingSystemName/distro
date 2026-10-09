@@ -63,6 +63,10 @@ jobs:
       - run: python3 build.py validate
       - run: python3 build.py fetch linux pacman --bootstrap
       - run: python3 build.py bootstrap --jobs 2
+      - name: Verify bootstrap receipts and record selected native tools
+        run: |
+          python3 build.py bootstrap --check
+          python3 build.py doctor > out/ci/native-inputs.json
       - run: python3 build.py native-toolkit --fetch --jobs 2
       - run: python3 build.py build linux pacman --jobs 2
       - name: Build Telorgon EFI from the verified source workspace
@@ -90,6 +94,7 @@ jobs:
             out/verification/**/windows.json
             out/logs/
             out/state/
+            out/ci/native-inputs.json
             out/images/*.json
             out/bootstrap/work/stamps/
             out/loader/loader-sources.json
@@ -126,12 +131,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends build-essential bison bc m4 perl autoconf automake libtool pkg-config meson ninja-build fakeroot zlib1g-dev xz-utils qemu-system-x86 ovmf e2fsprogs gnupg python3-jinja2 cmake clang libclang-dev curl ca-certificates git
-          python3 - <<'PY'
-          import subprocess
-          version = subprocess.check_output(['/usr/bin/meson', '--version'], text=True).strip()
-          if tuple(map(int, version.split('.')[:2])) < (1, 5):
-              raise SystemExit('Pinned GdkPixbuf requires Meson >=1.5 at /usr/bin/meson; configure the disposable worker seed image accordingly')
-          PY
           rustup toolchain install nightly-2026-10-06 --profile minimal --target x86_64-unknown-uefi --target x86_64-unknown-linux-gnu
       - name: Verify exact portable application source inputs
         run: |
@@ -149,21 +148,17 @@ jobs:
       - run: python3 build.py validate
       - run: python3 build.py fetch --bootstrap
       - run: python3 build.py bootstrap --jobs "$CD_BUILD_JOBS"
+      - name: Verify bootstrap receipts and record selected native tools
+        run: |
+          python3 build.py bootstrap --check
+          python3 build.py doctor > out/ci/native-inputs.json
       - run: python3 build.py native-toolkit --fetch --jobs "$CD_BUILD_JOBS"
       - name: Build the complete pinned native package catalog
         run: python3 build.py build --jobs "$CD_BUILD_JOBS"
-      - name: Compose the genuine target desktop SDK and compile Telorgon
+      - name: Build Telorgon EFI from the verified source workspace
         run: |
-          python3 tools/compose-desktop-sdk.py
           CD_SOURCE_WORKSPACE=$(python3 -c 'import json; print(json.load(open("out/bundles/current.json"))["root"])')
-          CD_DESKTOP_SYSROOT=$(python3 -c 'import json; print(json.load(open("out/sdk/current.json"))["sysroot"])')
-          python3 build.py apps prepare --source-root "$CD_SOURCE_WORKSPACE"
-          python3 build.py apps check --sysroot "$CD_DESKTOP_SYSROOT" > out/ci/apps-preflight.json
-          python3 -c 'import json; assert json.load(open("out/ci/apps-preflight.json"))["ready_to_build"], "Target desktop build inputs are incomplete"'
-          python3 build.py apps build --sysroot "$CD_DESKTOP_SYSROOT" --online --jobs "$CD_BUILD_JOBS"
           python3 build.py loader --source-root "$CD_SOURCE_WORKSPACE" --online
-          python3 tools/build-desktop-session-probe.py
-          python3 tools/audit-installed-resources.py
       - name: Qualify target APIs, TLS, signatures and private IPC
         run: |
           python3 tools/qualify-desktop.py --gbm
@@ -187,6 +182,17 @@ jobs:
           python3 tools/build-pam-auth-probe.py --make-fixture
           python3 build.py image --profile systemd --test-pam-auth
           python3 build.py vm --image out/images/custom-distro-pam-auth-test.img --expect CUSTOM_PAM_AUTHENTICATION_OK --output out/verification/pam-auth --timeout 150
+      - name: Compose the genuine target desktop SDK and compile Telorgon
+        run: |
+          python3 tools/compose-desktop-sdk.py
+          CD_SOURCE_WORKSPACE=$(python3 -c 'import json; print(json.load(open("out/bundles/current.json"))["root"])')
+          CD_DESKTOP_SYSROOT=$(python3 -c 'import json; print(json.load(open("out/sdk/current.json"))["sysroot"])')
+          python3 build.py apps prepare --source-root "$CD_SOURCE_WORKSPACE"
+          python3 build.py apps check --sysroot "$CD_DESKTOP_SYSROOT" > out/ci/apps-preflight.json
+          python3 -c 'import json; assert json.load(open("out/ci/apps-preflight.json"))["ready_to_build"], "Target desktop build inputs are incomplete"'
+          python3 build.py apps build --sysroot "$CD_DESKTOP_SYSROOT" --online --jobs "$CD_BUILD_JOBS"
+          python3 tools/build-desktop-session-probe.py
+          python3 tools/audit-installed-resources.py
       - name: Qualify actual Telorgon windows, keyboard input and redraw in the guest
         run: |
           python3 build.py image --profile desktop
@@ -210,6 +216,7 @@ jobs:
             out/images/*.json
             !out/images/pam-auth-build*.json
             out/ci/apps-preflight.json
+            out/ci/native-inputs.json
             out/bootstrap/work/stamps/
             out/bootstrap/root/.bootstrap-validated.json
             out/bootstrap/root/tools/pass2/.runtime-validated.json
@@ -219,6 +226,7 @@ jobs:
             out/sdk/current.json
             out/sdk/**/sdk.json
             out/apps/sources.json
+            out/apps/build/**/build.log
             out/qualification/**/report.json
             out/qualification/installed-resource-path-audit.json
             out/signing-tests/**/fixture.json

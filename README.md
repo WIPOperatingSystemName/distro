@@ -147,6 +147,15 @@ they are never part of an ordinary image.
 
 ## Telorgon desktop build
 
+The current pinned framework and apps fail Cargo feature resolution: Shell and
+Settings require `desktop-settings-linux` and `services::desktop_settings`,
+which Telorgon `880abac` does not provide. The 2026-10-08 local WSL2 run built
+all 72 runtime packages, passed 97 tests and booted the systemd image through
+WSLg, but produced no new desktop image. See
+[current source compatibility](docs/contributing.md#current-desktop-source-compatibility)
+and the [organization emulator guide](https://github.com/WIPOperatingSystemName/.github/blob/main/docs/emulator.md)
+for the systemd boot command and the prerequisites for resuming the desktop build.
+
 To try the already-built desktop locally, run:
 
 ```sh

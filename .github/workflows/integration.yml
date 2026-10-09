@@ -20,6 +20,11 @@ jobs:
       - run: python3 build.py validate
       - run: python3 build.py fetch linux pacman --bootstrap
       - run: python3 build.py bootstrap --jobs 4
+      - name: Verify bootstrap receipts and record selected native tools
+        run: |
+          mkdir -p out/ci
+          python3 build.py bootstrap --check
+          python3 build.py doctor > out/ci/native-inputs.json
       - run: python3 build.py native-toolkit --fetch --jobs 4
       - run: python3 build.py build linux pacman --jobs 4
       - run: python3 -m unittest discover -s tests -v
@@ -33,6 +38,7 @@ jobs:
           path: |
             out/logs/
             out/state/
+            out/ci/native-inputs.json
             out/bootstrap/work/stamps/
             out/bootstrap/root/.bootstrap-validated.json
             out/bootstrap/root/tools/pass2/.runtime-validated.json

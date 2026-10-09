@@ -35,9 +35,17 @@ def read_stamp(path: Path) -> dict:
 def check_stamp(record: dict, name: str) -> None:
     if record.get("schema") != 2:
         raise ValueError(f"{name} has a legacy completion stamp; explicitly run --upgrade-stamps to record a current baseline")
-    current = receipt([Path(path) for path in record["artifact_roots"]])
+    identity = record["identity"]
+    current = stage_receipt(identity["stage"], [Path(path) for path in record["artifact_roots"]],
+                            Path(identity["root"]), Path(identity["tools"]), identity["target"])
     if current != record["artifacts"] or fingerprint(current) != record["artifact_fingerprint"]:
         raise ValueError(f"{name} artifacts changed since their receipt; rebuild the stage and its consumers explicitly")
+
+
+def stage_receipt(stage: dict, paths: list[Path], root: Path, tools: Path, target: str) -> list[dict]:
+    mapping = {"sysroot": str(root), "tools": str(tools), "target": target}
+    excluded = tuple(Path(raw.format(**mapping)) for raw in stage.get("artifact_excludes", []))
+    return receipt(paths, exclude=excluded)
 
 
 def source_checks(names: list[str], sources: dict, sources_dir: Path) -> None:
@@ -248,7 +256,7 @@ def main() -> int:
                         probe = script if name == "validate" else HERE / "stages/validate-runtime.py"
                         probe_env = environment | {"CD_WORK_DIR": str(work / name / "build")}
                         subprocess.run(["python3", str(probe)], cwd=work / name / "build", env=probe_env, check=True)
-                    artifacts = receipt([Path(path) for path in old["artifact_roots"]])
+                    artifacts = stage_receipt(stage, [Path(path) for path in old["artifact_roots"]], root, tools, target)
                     if artifacts != old["artifacts"]:
                         raise ValueError(f"{name} refreshed validation changed its artifacts; inspect before refreshing")
                     refreshed = old | {"fingerprint": stage_fingerprint, "identity": identity,
@@ -272,7 +280,7 @@ def main() -> int:
                     probe_env = environment | {"CD_WORK_DIR": str(work / name / "build")}
                     subprocess.run(["python3", str(probe)], cwd=work / name / "build", env=probe_env, check=True)
                 artifact_roots = stage_artifacts(name, outputs, root, tools, target)
-                artifacts = receipt(artifact_roots)
+                artifacts = stage_receipt(stage, artifact_roots, root, tools, target)
                 record = old | {"schema": 2, "fingerprint": stage_fingerprint, "identity": identity,
                         "artifact_roots": [str(path) for path in artifact_roots], "artifacts": artifacts,
                         "artifact_fingerprint": fingerprint(artifacts),
@@ -313,7 +321,7 @@ def main() -> int:
                 print("\n".join(log.read_text(errors="replace").splitlines()[-60:]), flush=True)
                 raise ValueError(f"Stage {name} failed; exit {result.returncode}; log {log}")
             artifact_roots = stage_artifacts(name, outputs, root, tools, target)
-            artifacts = receipt(artifact_roots)
+            artifacts = stage_receipt(stage, artifact_roots, root, tools, target)
             record = {"schema": 2, "stage": name, "fingerprint": stage_fingerprint, "identity": identity,
                       "seconds": round(time.monotonic() - started, 2),
                       "outputs": [str(p) for p in outputs], "log": str(log), "origin": "built-with-receipts",

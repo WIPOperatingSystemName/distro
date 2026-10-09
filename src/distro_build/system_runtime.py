@@ -236,7 +236,7 @@ def _systemd(build: SystemBuild, *, polkit: bool = False) -> None:
                  "-Ddefault-user-shell=/bin/sh", "-Dnologin-path=/bin/false",
                  "-Dumount-path=/usr/bin/umount", "-Dpamlibdir=/usr/lib/security", "-Dpamconfdir=/etc/pam.d",
                  *["-D" + option + "=disabled" for option in disabled_features],
-                 *["-D" + option + "=false" for option in disabled_bools]])
+                 *["-D" + option + "=false" for option in disabled_bools]], installed_only=True)
     build.license("systemd", ["LICENSE.LGPL2.1", "LICENSE.GPL2"])
     shutil.copytree(build.source / "LICENSES", build.stage / "usr/share/licenses/systemd/LICENSES")
     expected = ["usr/lib/systemd/systemd", "usr/lib/systemd/systemd-logind", "usr/lib/systemd/systemd-udevd",

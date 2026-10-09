@@ -4,12 +4,13 @@ import importlib.util
 import json
 import sys
 import tempfile
+import tomllib
 import unittest
 from unittest.mock import patch
 
 BOOTSTRAP = Path(__file__).resolve().parents[1] / "bootstrap"
 sys.path.insert(0, str(BOOTSTRAP))
-from integrity import fingerprint, receipt
+from integrity import fingerprint, receipt, stage_artifacts
 
 SPEC = importlib.util.spec_from_file_location("bootstrap_runner", BOOTSTRAP / "run-stage.py")
 runner = importlib.util.module_from_spec(SPEC)
@@ -82,6 +83,39 @@ class BootstrapCacheTests(unittest.TestCase):
         original = path.read_bytes()
         self.check()
         self.assertEqual(original, path.read_bytes())
+
+    def test_glibc_scsi_headers_do_not_invalidate_kernel_receipts(self):
+        stages = tomllib.loads((BOOTSTRAP / "stages.toml").read_text())["stages"]
+        stage = next(row for row in stages if row["name"] == "headers")
+        directory = self.root / "usr/include/scsi"
+        directory.mkdir(parents=True)
+        kernel_header = directory / "scsi_netlink.h"
+        kernel_header.write_text("source-built Linux API")
+        paths = stage_artifacts("headers", [], self.root, self.root / "tools", "target")
+        original = runner.stage_receipt(stage, paths, self.root, self.root / "tools", "target")
+        for name in ("scsi.h", "scsi_ioctl.h", "sg.h"):
+            (directory / name).write_text("source-built glibc header")
+        self.assertEqual(original, runner.stage_receipt(stage, paths, self.root, self.root / "tools", "target"))
+
+        # Each stage checks the files it owns. glibc still covers its SCSI API.
+        libc_stage = next(row for row in stages if row["name"] == "glibc")
+        libc_paths = stage_artifacts("glibc", [], self.root, self.root / "tools", "target")
+        libc_receipt = runner.stage_receipt(libc_stage, libc_paths, self.root, self.root / "tools", "target")
+        (directory / "sg.h").write_text("tampered glibc header")
+        self.assertNotEqual(libc_receipt, runner.stage_receipt(libc_stage, libc_paths, self.root, self.root / "tools", "target"))
+        kernel_header.write_text("tampered Linux API")
+        self.assertNotEqual(original, runner.stage_receipt(stage, paths, self.root, self.root / "tools", "target"))
+
+    def test_unexpected_scsi_header_is_rejected(self):
+        stages = tomllib.loads((BOOTSTRAP / "stages.toml").read_text())["stages"]
+        stage = next(row for row in stages if row["name"] == "headers")
+        directory = self.root / "usr/include/scsi"
+        directory.mkdir(parents=True)
+        (directory / "scsi_netlink.h").write_text("source-built Linux API")
+        paths = stage_artifacts("headers", [], self.root, self.root / "tools", "target")
+        original = runner.stage_receipt(stage, paths, self.root, self.root / "tools", "target")
+        (directory / "injected.h").write_text("unexpected API")
+        self.assertNotEqual(original, runner.stage_receipt(stage, paths, self.root, self.root / "tools", "target"))
 
 
 def load_tests(loader, standard_tests, pattern):

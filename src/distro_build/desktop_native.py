@@ -74,7 +74,8 @@ class DesktopBuild(TargetBuild):
             "[binaries]\nc = '/usr/bin/gcc'\ncpp = '/usr/bin/g++'\n"
             f"pkg-config = {str(self.native_pc)!r}\n")
 
-    def meson(self, options: list[str], *, cpp: bool = False, data_only: bool = False) -> None:
+    def meson(self, options: list[str], *, cpp: bool = False, data_only: bool = False,
+              installed_only: bool = False) -> None:
         cross = self.work / "cross.ini"
         lines = ["[binaries]", f"c = {str(self.wrapper)!r}",
                  f"ar = {self.env['AR']!r}", f"strip = {self.env['STRIP']!r}",
@@ -100,7 +101,17 @@ class DesktopBuild(TargetBuild):
                   "--native-file", str(self.native_file), "--prefix=/usr", "--libdir=lib",
                   "--sysconfdir=/etc", "--localstatedir=/var", "--buildtype=release",
                   "--wrap-mode=nofallback", "-Ddefault_library=shared", *options])
-        self.run(["ninja", "-C", str(directory), f"-j{self.jobs}"])
+        outputs = []
+        if installed_only:
+            targets = json.loads(subprocess.check_output(
+                ["meson", "introspect", "--targets", str(directory)], env=self.env, text=True))
+            outputs = list(dict.fromkeys(
+                str(Path(filename).relative_to(directory))
+                for target in targets if target.get("installed")
+                for filename in target["filename"]))
+            if not outputs:
+                raise RuntimeError("Meson did not declare any installed build targets")
+        self.run(["ninja", "-C", str(directory), f"-j{self.jobs}", *outputs])
         self.env["DESTDIR"] = str(self.stage)
         self.run(["meson", "install", "-C", str(directory), "--no-rebuild"])
 

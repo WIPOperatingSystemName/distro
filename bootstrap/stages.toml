@@ -37,6 +37,14 @@ requires = []
 outputs = ["{tools}/native/bin/gperf"]
 
 [[stages]]
+name = "meson-native"
+script = "stages/meson-native.py"
+interpreter = "python3"
+sources = ["meson"]
+requires = []
+outputs = ["{tools}/native/bin/meson", "{tools}/native/lib/meson"]
+
+[[stages]]
 name = "gcc"
 script = "stages/gcc.sh"
 sources = ["gcc", "gmp", "mpfr", "mpc"]
@@ -49,6 +57,8 @@ script = "stages/headers.sh"
 sources = ["linux"]
 requires = ["gcc"]
 outputs = ["{sysroot}/usr/include/linux/version.h", "{sysroot}/usr/include/asm/unistd.h"]
+# These files are installed and covered by the glibc stage, not Linux headers.
+artifact_excludes = ["{sysroot}/usr/include/scsi/scsi.h", "{sysroot}/usr/include/scsi/scsi_ioctl.h", "{sysroot}/usr/include/scsi/sg.h"]
 
 [[stages]]
 name = "glibc"

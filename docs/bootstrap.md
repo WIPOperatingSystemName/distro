@@ -17,6 +17,11 @@ Native Gawk, Flex and elfutils libelf are built from source into the project
 because the target bootstrap and kernel generators require them. Native libelf
 uses the host zlib development header/library as a declared generator seed; this
 library never enters target packages. The host also supplies bc and pkg-config.
+The bootstrap additionally stages source-pinned Meson 1.9.2 into its private
+native prefix because the desktop sources require a newer version than some
+host environments provide. Package builds verify its module receipts and record
+the selected Meson path, version and source identity. It is a native build tool
+and is excluded from the target OS.
 
 All writable build directories remain under this project:
 
@@ -88,6 +93,7 @@ release merely because their first build succeeds.
 | `gawk-native` | Native Gawk used by configure/build generators |
 | `flex-native` | Native Flex used by Linux Kconfig generators |
 | `elfutils-native` | Native libelf used by Linux objtool, with private include/link paths |
+| `meson-native` | Source-pinned private Meson for target package and native generator builds |
 | `gcc` | Temporary C cross compiler; source-built GMP, MPFR and MPC are compiled into the compiler build |
 | `headers` | Sanitized Linux userspace API headers installed into the target sysroot |
 | `glibc` | Cross-built glibc, static library, runtime libraries and target dynamic loader |

@@ -98,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "doctor":
             from .runner import seed_report
-            emit(seed_report())
+            emit(seed_report(project))
         elif args.command in {"validate", "plan", "affected", "fetch", "build"}:
             recipes = catalog(project)
             if not recipes and args.command != "fetch":

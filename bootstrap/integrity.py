@@ -18,13 +18,16 @@ def sha256(path: Path) -> str:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def receipt(paths: list[Path]) -> list[dict]:
+def receipt(paths: list[Path], *, exclude: tuple[Path, ...] = ()) -> list[dict]:
     entries: dict[str, dict] = {}
+    excluded = set(exclude)
     for root in paths:
         if not root.exists() and not root.is_symlink():
             raise ValueError(f"Missing bootstrap artifact: {root}")
         descendants = list(root.rglob("*")) if root.is_dir() and not root.is_symlink() else []
         for path in [root, *descendants]:
+            if path in excluded:
+                continue
             attributes = path.lstat()
             row = {"path": str(path), "mode": stat.S_IMODE(attributes.st_mode)}
             if path.is_symlink():
