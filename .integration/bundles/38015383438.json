@@ -1,0 +1,45 @@
+{
+  "controller_sha": "098cbbd1baa58bb8e270aef535461474f4ec4552",
+  "digest": "24c47705ada585ac3d7d3443f06416e2520ff1d025ee9d558fdfa95ace1359cd",
+  "distro_base": "155464f61b93f4f72415154a3241f5fddba6d907",
+  "pins": {
+    "bootloader": "f7dd546849e6cf9aff77991657121e5922bb48c0",
+    "file-explorer": "0fe09d59ab83ff9f554ffa2d79cfa04eebce8bb1",
+    "portal-picker": "bd6b47976c4d6331023920e90ef1031ad6d0d059",
+    "settings": "43ac44e6aa9d720a650dd40bd1896664f4423c8a",
+    "shell": "f5d894997826ffaa93014179b785ff65e4bf6ec3",
+    "telorgon": "99f07fe07d19a6835e71cd39d0cbe91f0bd835a4"
+  },
+  "prs": [
+    {
+      "base": "e3f630aaa5bf5211b1cd3cf73839b3afe2d92835",
+      "head": "99f07fe07d19a6835e71cd39d0cbe91f0bd835a4",
+      "number": 3,
+      "repository": "telorgon",
+      "tree": "2b2f89bba939249a0749a4e3867133193f72824d"
+    },
+    {
+      "base": "cd5b6c770024303ead715c3239e6a46aabb3d5e8",
+      "head": "f7dd546849e6cf9aff77991657121e5922bb48c0",
+      "number": 3,
+      "repository": "bootloader",
+      "tree": "07caa818015008a352a70b7d14513b9d3372218b"
+    },
+    {
+      "base": "b0ddfa10c3352cebb25b4cc3fafb2a641baa2ec0",
+      "head": "f5d894997826ffaa93014179b785ff65e4bf6ec3",
+      "number": 3,
+      "repository": "shell",
+      "tree": "a06120bdce7a14fe888f176a9e6037f2e33dbac7"
+    },
+    {
+      "base": "155464f61b93f4f72415154a3241f5fddba6d907",
+      "head": "2c1eb2338a7fefb0afb4b1eb5122f95b784ff147",
+      "number": 15,
+      "repository": "distro",
+      "tree": "e505a2d98391b6ac88e5c5729345231cd4e0be75"
+    }
+  ],
+  "run_id": 38015383438,
+  "schema": 1
+}
