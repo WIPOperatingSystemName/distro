@@ -1,0 +1,25 @@
+schema = 1
+
+[package]
+name = "qemu-guest-agent"
+version = "9.2.4"
+revision = 1
+arch = "x86_64"
+description = "QEMU Guest Agent for opt-in private development VM deployment"
+license = "GPL-2.0-only"
+
+[[sources]]
+name = "main"
+url = "https://download.qemu.org/qemu-9.2.4.tar.xz"
+filename = "qemu-9.2.4.tar.xz"
+format = "file"
+sha256 = "f3cc1c4eabfdb288218ac3e33763dbe9e276d8bc890b867a2335d58de2ddd39a"
+
+[dependencies]
+native = []
+target = ["glibc", "libgcc", "glib"]
+runtime = ["glibc", "libgcc", "glib", "systemd", "busybox", "pacman"]
+
+[build]
+adapter = "script"
+commands = [["python3", "{recipe}/build.py"]]

@@ -24,7 +24,7 @@ class RunTests(unittest.TestCase):
             directory.mkdir(parents=True)
             (directory / "Cargo.toml").write_text("[workspace]\n")
         (self.project / "profiles").mkdir()
-        for profile in ("desktop-use", "systemd", "console"):
+        for profile in ("desktop-use", "desktop-dev", "systemd", "console"):
             (self.project / "profiles" / f"{profile}.toml").write_text('packages = ["linux", "busybox"]\n')
         sdk = self.project / "out/sdk"
         sdk.mkdir(parents=True)
@@ -50,11 +50,14 @@ class RunTests(unittest.TestCase):
         with ExitStack() as stack:
             stack.enter_context(patch.object(cli, "main", side_effect=stage))
             stack.enter_context(patch.object(cli, "emit"))
+            # These tests exercise orchestration; real inventories are covered in test_run_cache.
+            stack.enter_context(patch.object(cli.DevelopmentCache, "inventory", return_value="fixture-inputs"))
             stack.enter_context(patch.object(vm, "discover_runtime"))
             stack.enter_context(patch.object(compose, "runtime_packages", return_value=["linux", "busybox"]))
             stack.enter_context(patch.object(compose, "console_image", side_effect=image))
             stack.enter_context(patch.object(runner, "run"))
             stack.enter_context(patch.object(apps, "preflight", return_value={"ready_to_build": sdk_ready}))
+            stack.enter_context(patch.object(apps, "catalog", return_value={"fixture-app": {}}))
             self.desktop = stack.enter_context(patch.object(vm_session, "start", side_effect=desktop_start,
                                                           return_value={"exit_code": 0}))
             self.boot = stack.enter_context(patch.object(vm, "run", return_value={"success": boot_ok}))
@@ -76,6 +79,10 @@ class RunTests(unittest.TestCase):
         self.identity = "d" * 64
         self.invoke()
         self.assertNotEqual(first, self.desktop.call_args.kwargs["name"])
+
+    def test_development_profile_explicitly_enables_named_guest_channel(self):
+        self.assertEqual(self.invoke("--profile", "desktop-dev", "--name", "dev"), 0)
+        self.desktop.assert_called_once_with(self.project, self.image, name="dev", development=True)
 
     def test_recomposed_image_preserves_saved_guest_data_for_the_same_build(self):
         self.image.parent.mkdir(parents=True)

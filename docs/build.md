@@ -1,157 +1,204 @@
-# Build and test the OS
+# Build and run
 
-Run these commands from the `distro` checkout on x86_64 Linux, including Ubuntu
-inside WSL2. For Windows GUI setup and QEMU troubleshooting, see the
-[emulator guide](https://github.com/WIPOperatingSystemName/.github/blob/main/docs/emulator.md).
+Complete [environment setup](setup.md) first. Run commands from the distro root
+in a Linux terminal. `./run` forwards arguments to `python3 build.py run`.
 
 ## Host setup
 
-Use Python 3.11 or newer. A full desktop source build needs substantial disk
-space and memory; the desktop integration worker requires 128 GiB free and
-16 GiB RAM. Start with four compile jobs, or two on smaller hosts.
-
-On Ubuntu 24.04, install the declared build seeds and emulator tools:
-
-```sh
-sudo apt update
-sudo apt install -y build-essential bison bc m4 perl autoconf automake \
-  libtool pkg-config meson ninja-build fakeroot zlib1g-dev xz-utils \
-  e2fsprogs gnupg python3 python3-jinja2 cmake clang libclang-dev \
-  curl ca-certificates git qemu-system-x86 qemu-system-gui ovmf
-```
-
-Other distributions need equivalent tools. Bootstrap supplies the pinned private
-Meson used by target builds. Host tools are development seeds; host runtime
-packages are not copied into the image.
-
-Install [Rustup](https://rust-lang.github.io/rustup/installation/index.html) if
-needed, then install the compiler pinned by the loader and application recipes:
-
-```sh
-rustup toolchain install nightly-2026-10-06 --profile minimal \
-  --target x86_64-unknown-uefi --target x86_64-unknown-linux-gnu
-```
-
-Initialize the sources at the commits recorded by the distro checkout:
-
-```sh
-git submodule update --init --recursive
-```
-
-Finish any component branch work before restoring submodules. The build command
-uses the sources already present and records their identity; it never pulls,
-resets or advances those checkouts.
+Use the [setup guide](setup.md) for host seeds, Rust, QEMU/OVMF, KVM and WSLg.
+On Windows, apply the [WSLg frame-rate setting](setup.md#wslg-frame-rate) before
+high-refresh testing. Run the pipeline as your normal user.
 
 ## Build and run
 
-Build and open the systemd OS test image:
+For source development, create a named development VM:
 
 ```sh
-python3 build.py run --profile systemd
+./run --profile desktop-dev --name dev --jobs 4
 ```
 
-The command audits the host, validates recipes, fetches verified sources, builds
-and checks the bootstrap toolchain, builds the native package toolkit and runtime
-packages, compiles Telorgon EFI, composes `out/images/custom-distro-systemd.img`
-and opens QEMU. Failures stop the sequence and report the stage/log.
+The pipeline audits the host, validates recipes, downloads verified sources,
+builds/checks the bootstrap compiler, builds the private package toolkit and
+runtime packages, builds Telorgon EFI and applications, composes the image and
+opens QEMU. The first build needs network access and can take substantial time.
+Failures stop at the affected stage and report its log.
 
-The window stays open after its startup checks pass. Close QEMU or press Ctrl+C
-to stop. This profile has locked accounts and no interactive login. For a bounded
-check that exits after success or failure:
-
-```sh
-python3 build.py run --profile systemd --headless
-python3 build.py run --profile console --headless
-```
-
-Console/systemd disks use temporary snapshots. Reports, serial logs and
-screenshots go to `out/verification/run-<profile>/`. Use `--output` to retain
-separate runs and `--timeout` to change the 600-second startup deadline. A missing
-assertion or timeout returns a failing exit status.
-
-Use `--jobs 2` to reduce parallelism. `--offline` requires cached source archives,
-Cargo inputs and the pinned Rust toolchain. Existing bootstrap/package receipts
-are checked before reuse. The loader still invokes Cargo.
+Telorgon starts the local `custom` desktop session. Open applications from the
+launcher and test mouse/keyboard behavior. The development profile adds the
+source-built QEMU Guest Agent and private deployment channel.
 
 ## Desktop build
 
-The desktop pipeline additionally composes the SDK, checks its build inputs,
-compiles the applications and creates `out/images/custom-distro-desktop-use.img`:
+For a normal desktop without that channel:
 
 ```sh
-python3 build.py run
+./run
 ```
 
-The default profile is `desktop-use`. It requires a compatible framework/app
-source set. The integrated framework currently lacks `desktop-settings-linux`,
-which Shell and Settings request; desktop compilation stops at Cargo feature
-resolution until compatible component revisions are reviewed together. Removing
-a feature name alone does not supply its API. The systemd test command above
-builds independently of the application stage.
+This defaults to `desktop-use`. Framework, loader and apps must form a compatible
+source set. Builds include existing uncommitted source edits and never pull,
+reset or advance submodules. A missing Rust feature/API requires a source fix
+or an explicitly reviewed compatible source set; removing a requested feature
+name does not supply its implementation.
 
-After a successful desktop build, QEMU starts a local `custom` session. Open
-File Explorer and Settings from its launcher; close QEMU or press Ctrl+C to stop.
-The default VM name uses the first 16 characters of the stable image build
-identity, which records the package, loader and policy inputs. Rebuilding the
-same inputs reopens the saved disk even when filesystem timestamps change the
-image's byte digest. A different build identity gets a separate disk. VM files
-live under `out/vms/test-<identity>/`.
+Without `--name`, `run` chooses `test-<build-identity-prefix>`: the same image
+build reuses its disk, while a different build gets a separate VM. This identity
+is derived from build inputs, independently of filesystem timestamps in image
+bytes. Use an explicit name when you want to retain one disk across builds.
 
-Use `run --name my-test` to deliberately reuse a named desktop disk, including
-after rebuilding its base. To reopen it without building:
+## Reopen a saved VM
+
+Reopen the development VM without compiling:
 
 ```sh
-python3 build.py vm --use --name my-test
+python3 build.py vm --use --development --name dev
 ```
 
-For component development or an imported source bundle, pass
-`run --source-root /path/to/workspace`; the workspace must contain the Telorgon
-framework, bootloader and application directories. See [source modules](sources.md)
-and [contributing](contributing.md) for source snapshot and review rules.
+For a normal desktop, use `python3 build.py vm --use --name my-desktop`.
+`vm --use` defaults to the name `custom`; it does not automatically find the
+VM selected by an earlier unnamed `run`. Reuse the exact printed name.
 
-## Individual stages
+On first launch, `vm` needs an existing image. Its default base is
+`out/images/custom-distro-desktop-dev.img` with `--development`, or
+`out/images/custom-distro-desktop-use.img` otherwise. It does not build a missing
+image or switch profiles. Use `run` for initial preparation.
 
-For diagnosing a stage or preparing a desktop without opening QEMU:
+Files, guest-installed packages and firmware variables live under
+`out/vms/<name>/`. **An existing name retains its original disk even after the
+base image is rebuilt.** Application deployment updates that disk explicitly.
+Kernel, service-policy, runtime-library or loader changes need a newly composed
+image and a new VM name for testing; application deployment cannot update them.
+Do not delete a saved VM as a rebuild shortcut.
+
+QEMU uses private virtual disks, copied firmware variables and user-mode
+networking. It probes KVM and falls back to TCG. Normal desktop use has no boot
+assertions or injected test input. Close the guest normally to retain its data;
+closing QEMU or Ctrl+C also ends the launcher. Logs and the exact QEMU command
+are saved alongside the VM state.
+
+## Deploy applications into a running development VM
+
+Implement fixes in the owning checkout under `sources/<module>/`. Generated
+snapshots and experiments under `out/` cannot be the only copy of a fix.
+Keep the named development VM running. In a second terminal:
 
 ```sh
-python3 build.py doctor
-python3 build.py validate
-python3 build.py fetch --bootstrap
-python3 build.py bootstrap --jobs 4
-python3 build.py bootstrap --check
-python3 build.py native-toolkit --fetch --jobs 4
-python3 build.py build --jobs 4
-python3 build.py loader --online
-python3 tools/compose-desktop-sdk.py
-CD_DESKTOP_SYSROOT=$(python3 -c 'import json; print(json.load(open("out/sdk/current.json"))["sysroot"])')
-python3 build.py apps prepare
-python3 build.py apps check --sysroot "$CD_DESKTOP_SYSROOT"
-python3 build.py apps build --sysroot "$CD_DESKTOP_SYSROOT" --online --jobs 4
-python3 build.py image --profile desktop-use
+python3 build.py deploy telorgon-file-explorer --name dev
 ```
 
-Stop if a stage fails. `apps check` must report `ready_to_build: true`; it checks
-SDK inputs, while compilation checks Rust features/APIs. Omit `--online` once
-Cargo inputs are cached. `image` only composes already-built artifacts.
+The default deployment build profile is `dev`. For renderer/performance work,
+use optimized code and rebuild every affected app. For a framework change:
+
+```sh
+python3 build.py deploy telorgon-shell telorgon-file-explorer \
+  telorgon-settings-app telorgon-portal-picker --name dev --build-profile release --jobs 4
+```
+
+The pipeline snapshots the edited source, uses the recorded SDK, builds packages
+with content-specific `.dev<build-identity>` versions, transfers and verifies
+SHA256, runs **one guest `pacman -U --noconfirm` transaction**, and checks all
+installed versions. It restarts the complete desktop session so clients release
+old executable mappings. **Save work first: this closes desktop apps.**
+
+Reopen apps and test the affected behavior. Installation and compositor startup
+are separate from GUI verification. Record the source identity, VM/base image,
+package versions/hashes, screenshots and measurements under `out/verification/`.
+`out/vms/dev/deployment.json` records the transaction and restart result.
+
+Useful options:
+
+| Option | Behavior |
+| --- | --- |
+| `--build-profile dev` / `release` | Select debug iteration or optimized performance testing |
+| `--online` | Permit fetching locked Cargo dependencies; deployment is otherwise offline |
+| `--no-restart` | Keep the session; manually close/reopen updated applications to use new code |
+| `--source-root PATH` | Explicit compatible workspace override; use the same workspace throughout |
+| `--timeout SECONDS` | Guest command deadline, independent of compilation duration |
+
+Development packages and receipts do not replace the ordinary package pointers
+used for image composition. A later `./run` builds normal packages from the
+source checkout. Never copy binaries over package-owned guest files to test a
+fix. Ordinary library ABI changes require their corresponding runtime packages
+and a fresh base; `deploy` handles application packages only.
+
+## Incremental builds
+
+Repeated `run` commands validate content inventories and reuse completed
+bootstrap/runtime, loader, SDK, application and image stages when their inputs
+and outputs match. Receipts live in `out/state/run/`; interrupted stages are not
+reusable. Source changes normally reuse the essentials and SDK. Persistent Cargo
+workspaces retain unchanged files and compiler outputs for deployment builds.
+
+```sh
+./run --profile desktop-dev --name dev --offline
+./run --profile systemd --headless --verify
+```
+
+`--offline` requires cached archives, Cargo dependencies and the pinned compiler.
+`--verify` runs the full preparation and integrity paths; it does not discard
+valid lower-level compiler caches. Use `--jobs 2` for less compile parallelism.
+There is no fixed compilation-time guarantee. Do not edit caches or receipts to
+force reuse; inspect the failing inputs/log and retry after fixing the cause.
+
+## Base-system and desktop checks
+
+For a systemd test window that stays open after startup checks, use
+`./run --profile systemd`. For bounded checks that exit automatically:
+
+```sh
+./run --profile systemd --headless --output out/verification/systemd
+./run --profile console --headless --output out/verification/console
+```
+
+These profiles use temporary disk snapshots. The default startup deadline is
+600 seconds; `--timeout` accepts 1–3600. Accounts remain locked in the systemd
+profile; it is a service/session test, rather than an interactive login.
+See [testing](testing.md) for desktop, hover, password and upgrade procedures.
 
 ## Desktop qualification
 
-After the desktop build, create the separate qualification image and require
-both its guest checks and the app window/input report:
+The `desktop` image profile adds automated qualification units and a genuine
+Wayland input/presentation probe. It is separate from normal `desktop-use` and
+`desktop-dev` sessions. Follow the [desktop qualification procedure](testing.md#desktop-qualification)
+after the normal desktop build inputs are ready.
+
+## Audio and camera
+
+Saved desktop launches support `--audio auto`, `pulse` or `none`; `auto` detects
+WSLg/PulseAudio endpoints. To select a backend without rebuilding:
 
 ```sh
-python3 tools/build-desktop-session-probe.py
-python3 build.py image --profile desktop
-python3 build.py vm --image out/images/custom-distro-desktop.img \
-  --expect CUSTOM_DESKTOP_SESSION_OK --desktop-input --timeout 600 \
-  --output out/verification/desktop
-python3 tools/check-wayland-window.py \
-  --vm-report out/verification/desktop/result.json \
-  --output out/verification/desktop/windows.json
+python3 build.py vm --use --development --name dev --audio pulse
+python3 build.py vm --use --development --name dev --audio none
 ```
 
-Add `--window` to view the bounded test. Require `success: true` in `result.json`
-and `passed: true` in `windows.json`. The normal desktop launcher does not inject
-test input or produce qualification receipts. See [desktop qualification](desktop-session-qualification.md),
-[authentication](pam-authentication-qualification.md) and
-[release requirements](release.md) for the scope of additional gates.
+Choose one launch command at a time. Pulse mode requires a QEMU build with the
+`pa` backend and an accessible `PULSE_SERVER`/WSLg socket. It exposes playback
+and microphone input to the guest; the guest still needs working PipeWire/ALSA
+policy. An initialized disk from an older image does not gain new media drivers
+just by changing this flag.
+
+`vm --use --usb-camera BUS:ADDRESS` optionally passes one Linux-attached USB
+webcam to the VM. On WSL, first attach it to Linux using the
+[Microsoft USB device instructions](https://learn.microsoft.com/en-us/windows/wsl/connect-usb).
+Use its actual Linux bus/address and ensure read/write device access. The
+launcher rejects a device without a USB video interface. Passing through a
+camera does not establish portal consent, capture or screen-sharing behavior.
+
+## Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| QEMU window cannot open | Check GTK support and the WSLg display environment; see [setup](setup.md) |
+| Low visible frame rate on WSL | Verify `.wslgconfig`, `weston.log`, Windows/guest display rates and KVM separately |
+| TCG instead of KVM | Read the launcher's probe failure and check `/dev/kvm` access; do not run the builder as root |
+| Rebuilt changes absent | Confirm the VM name and deployment receipt; a saved disk is not replaced by image composition |
+| Missing guest-agent socket | Boot a `desktop-dev` image with `--use --development` and the matching name |
+| Missing image | Use `run` to build it; `vm` only launches existing media |
+| Cargo feature/API mismatch | Inspect actual framework/app sources and preserve local edits; review compatible changes together |
+| Guest install fails | Inspect `deployment.json`; failed transactions/restarts do not imply rollback |
+| Build fails | Read its reported log and fix the owning source/recipe, then retry |
+
+For CLI details use `python3 build.py --help`, `run --help`, `deploy --help`,
+`vm --help` or the individual stage help. Source snapshots, packages and logs
+remain under `out/`; [architecture](architecture.md) maps their locations.

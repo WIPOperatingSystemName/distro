@@ -27,7 +27,7 @@ def prepare(project: Path, image: Path, name: str, runtime: dict) -> tuple[Path,
         raise RuntimeError("Persistent VM directory cannot be a symlink")
     directory.mkdir(mode=0o700, exist_ok=True)
     directory.chmod(0o700)
-    for filename in ("disk.img", "OVMF_VARS.fd", "state.json", "vm.lock", "serial.log", "qemu.log", "command.json", "session.json", "qmp.sock"):
+    for filename in ("disk.img", "OVMF_VARS.fd", "state.json", "vm.lock", "serial.log", "qemu.log", "command.json", "session.json", "qmp.sock", "agent.sock", "deploy.lock", "deployment.json"):
         if (directory / filename).is_symlink():
             raise RuntimeError("Persistent VM files cannot be symlinks")
     lock = directory / "vm.lock"
@@ -86,17 +86,28 @@ def initialize(directory: Path, image: Path, runtime: dict) -> dict:
     return record
 
 
-def start(project: Path, image: Path, *, name: str = "custom", display: str = "gtk,gl=off") -> dict:
+def start(project: Path, image: Path, *, name: str = "custom", display: str = "gtk,gl=off,zoom-to-fit=off", development: bool = False,
+          audio: str = "auto", usb_camera: str | None = None) -> dict:
     project = project.resolve()
     runtime = discover_runtime(project)
+    from .vm_media import audio_options, camera_options
     directory, paths = prepare(project, image, name, runtime)
     with paths["lock"].open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:
             raise RuntimeError("This VM is already running; use another --name for a separate VM") from error
+        audio_arguments, audio_record = audio_options(runtime, audio)
+        camera_arguments, camera_record = camera_options(usb_camera)
+        if audio_record["backend"] == "none" and audio != "none":
+            print("No host PulseAudio endpoint found; VM sound uses a silent backend. "
+                  "Set PULSE_SERVER and use --audio pulse for host playback and microphone input.", file=sys.stderr)
         record = initialize(directory, image, runtime)
         qmp = directory / "qmp.sock"
+        agent = directory / "agent.sock"
+        if len(os.fsencode(agent)) >= 104:
+            raise RuntimeError("VM path is too long for its private agent socket")
+        agent.unlink(missing_ok=True)
         if qmp.exists():
             # The lock proves no managed session is active. A stale socket can
             # remain after an interrupted host process; QEMU cannot reuse it.
@@ -104,19 +115,28 @@ def start(project: Path, image: Path, *, name: str = "custom", display: str = "g
         env = runtime["environment"].copy()
         env["TMPDIR"] = str(directory)
         acceleration = "tcg"
+        acceleration_failure = "/dev/kvm is missing or this process lacks read/write access"
         if os.access("/dev/kvm", os.R_OK | os.W_OK):
             probe = subprocess.run([runtime["qemu"], "-machine", "none", "-accel", "kvm", "-nodefaults",
                                     "-display", "none", "-monitor", "stdio", "-S"],
                                    input="quit\n", text=True, capture_output=True, env=env, timeout=10)
             if not probe.returncode:
                 acceleration = "kvm"
+                acceleration_failure = None
+            else:
+                acceleration_failure = probe.stderr.strip() or f"KVM probe exited with status {probe.returncode}"
+        print(f"VM acceleration: {acceleration.upper()}", file=sys.stderr, flush=True)
+        if acceleration == "tcg":
+            print(f"Warning: using slow CPU emulation because KVM is unavailable: {acceleration_failure}. "
+                  "If your account was just added to the kvm group, open a new login session or run "
+                  "'newgrp kvm' before launching again.", file=sys.stderr, flush=True)
         for path in (directory, Path(runtime["code"])):
             if any(char in str(path) for char in ",\n\r"):
                 raise RuntimeError("QEMU paths cannot contain commas or newlines")
         command = [runtime["qemu"], "-name", "Custom Distro", "-machine", "q35", "-accel",
                    "kvm" if acceleration == "kvm" else "tcg,thread=multi", "-cpu",
-                   "host" if acceleration == "kvm" else "max", "-smp", "4", "-m", "2048",
-                   "-nodefaults", "-vga", "std", "-display", display,
+                   "host" if acceleration == "kvm" else "max", "-smp", "8", "-m", "2048",
+                   "-nodefaults", "-device", "virtio-vga,xres=1280,yres=720", "-display", display,
                    "-serial", f"file:{directory / 'serial.log'}", "-monitor", "none",
                    "-qmp", f"unix:{qmp},server=on,wait=off",
                    "-drive", f"if=pflash,format=raw,readonly=on,file={runtime['code']}",
@@ -128,12 +148,17 @@ def start(project: Path, image: Path, *, name: str = "custom", display: str = "g
                    "-device", "qemu-xhci,id=xhci", "-device", "usb-kbd,bus=xhci.0",
                    "-device", "usb-tablet,bus=xhci.0", "-netdev", "user,id=network",
                    "-device", "virtio-net-pci,netdev=network"]
+        command += audio_arguments + camera_arguments
         if runtime["data"]:
             command += ["-L", runtime["data"]]
+        if development:
+            command += ["-device", "virtio-serial-pci,id=development",
+                        "-chardev", f"socket,path={agent},server=on,wait=off,id=development-agent",
+                        "-device", "virtserialport,bus=development.0,chardev=development-agent,name=org.qemu.guest_agent.0"]
         (directory / "command.json").write_text(json.dumps(command, indent=2) + "\n")
         print(f"Opening Custom Distro. Your files and settings are saved in {directory / 'disk.img'}. Close QEMU to stop.", file=sys.stderr, flush=True)
         with (directory / "qemu.log").open("w") as log:
-            process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, env=env)
+            process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, env=env, umask=0o077)
             try:
                 process.wait()
             except KeyboardInterrupt:
@@ -148,10 +173,13 @@ def start(project: Path, image: Path, *, name: str = "custom", display: str = "g
                         process.kill()
                         process.wait()
                 qmp.unlink(missing_ok=True)
+                agent.unlink(missing_ok=True)
         result = {"mode": "normal-desktop-use", "name": name, "disk": record["disk"],
                   "base_image_sha256": record["base_image_sha256"], "exit_code": process.returncode,
                   "persistent": True, "boot_assertions": False, "network": "qemu-user-nat",
-                  "directory": str(directory)}
+                  "directory": str(directory), "development_agent": development}
+        result.update(acceleration=acceleration, acceleration_failure=acceleration_failure)
+        result.update(audio=audio_record, camera=camera_record)
         (directory / "session.json").write_text(json.dumps(result, indent=2) + "\n")
         if process.returncode not in (0, -15):
             raise RuntimeError(f"QEMU exited with status {process.returncode}; see {directory / 'qemu.log'}")

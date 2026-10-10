@@ -13,6 +13,8 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from distro_build.model import Recipe
 from distro_build.runner import build_package
+from distro_build.cli import reuse_package_set
+from distro_build import cli
 
 
 class BuildInputsTests(unittest.TestCase):
@@ -89,6 +91,36 @@ stage=Path(os.environ['CD_STAGE_DIR'])
             self.assertEqual((root / "out/calls").read_text(), "build\n")
             state = json.loads((root / "out/state/packages/example.json").read_text())
             self.assertEqual(state["sha256"], results[0]["sha256"])
+
+    def test_run_reuses_verified_packages_but_rejects_changed_inputs_or_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            recipe, original = self.fixture(root)
+            compiler = root / "out/bootstrap/root/tools/bin/x86_64-custom-linux-gnu-gcc"
+            compiler.parent.mkdir(parents=True)
+            compiler.touch()
+            seed = {"kind": "test-seed"}
+            with patch("distro_build.runner.seed_report", return_value=seed), patch("distro_build.runner.check_bootstrap") as audit:
+                result = build_package(root, recipe, jobs=1)
+                self.assertTrue(reuse_package_set(root, {recipe.name: recipe}, [recipe]))
+                other = root / "packages/consumer"
+                other.mkdir()
+                (other / "package.toml").write_text(recipe.path.read_text().replace('name = "example"', 'name = "consumer"'))
+                (other / "build.py").write_text(original)
+                build_package(root, Recipe.load(other / "package.toml"), jobs=1)
+                audit.reset_mock()
+                self.assertEqual(cli.main(["--project", str(root), "build", "example", "consumer"], quiet=True), 0)
+                audit.assert_called_once()
+                (recipe.path.parent / "build.py").write_text(original + "# changed recipe\n")
+                self.assertFalse(reuse_package_set(root, {recipe.name: recipe}, [recipe]))
+                (recipe.path.parent / "build.py").write_text(original)
+                archive = Path(result["path"])
+                saved = archive.read_bytes()
+                archive.write_bytes(b"tampered archive")
+                self.assertFalse(reuse_package_set(root, {recipe.name: recipe}, [recipe]))
+                archive.write_bytes(saved)
+                with patch("distro_build.runner.seed_report", return_value={"kind": "changed-seed"}):
+                    self.assertFalse(reuse_package_set(root, {recipe.name: recipe}, [recipe]))
 
 
 if __name__ == "__main__":

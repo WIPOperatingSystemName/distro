@@ -1,8 +1,48 @@
 # Custom Distro contribution rules
 
 This project builds an independent Linux system from source. Keep application
-source in the pinned Telorgon submodules under sources/; never mutate checkouts as build
-setup. The default product uses the Telorgon bootloader and applications.
+source in the Telorgon submodules under sources/. Implement component changes in
+their owning source repository, including existing uncommitted work. Never pull,
+reset, patch, or advance those checkouts as incidental build setup. The default
+product uses the Telorgon bootloader and applications.
+
+## Source changes and VM testing
+
+- Fix application and framework code under `sources/<module>/`. `out/` holds
+  generated snapshots, caches, packages and evidence; edits there are not a
+  completed implementation. Never hand-edit a generated source snapshot or
+  leave a successful experiment as the only copy of a fix.
+- Use the Python pipeline to snapshot the edited source and build packages.
+  The default source root is `sources/`; use `--source-root` only for an
+  explicitly selected source workspace, and record it in the test evidence.
+- Test requested desktop behavior in a private `desktop-dev` VM. Build and
+  install through `python3 build.py deploy <packages> --name <vm>`; it verifies
+  transfers, runs one guest `pacman -U` transaction and checks installed versions.
+  Never test by copying executables or libraries over package-owned guest files.
+- Framework changes require rebuilding and deploying every affected application.
+  Use `--build-profile release` for rendering/performance tests. Save work before
+  a session restart; prefer a separate named test VM over disturbing a user's VM.
+- Exercise the affected behavior after installation. Record source identity,
+  package versions/hashes, VM identity and actual observations under `out/`.
+  Compilation, pacman success and compositor startup are separate from GUI
+  qualification. If VM testing is blocked, report the blocker and leave the fix
+  in the owning source repository; do not substitute experimental build sources.
+- See [the build/deploy guide](docs/build.md#deploy-applications-into-a-running-development-vm).
+
+## Documentation
+
+- Keep [the documentation index](docs/README.md) current. Environment setup,
+  including WSL2 and the WSLg frame-rate setting, belongs in [setup](docs/setup.md).
+  Daily build, saved-VM and pacman deployment commands belong in [build](docs/build.md).
+- Verify documented commands against the Python CLI and actual launcher behavior.
+  Distinguish rebuilding an image from upgrading an existing named VM's disk.
+- Remove superseded guides and fix their incoming links instead of retaining
+  competing setup paths or historical status pages. Keep reusable test procedures
+  in [testing](docs/testing.md); exact run hashes, timings and logs belong under
+  `out/`, with their actual qualification scope.
+- When toolchain, profiles, deployment or VM options change, update the relevant
+  guide and README together. Keep source pins and package versions authoritative
+  in their manifests rather than copying dated inventories into prose.
 
 Use the Python CLI for local work and CI. Package changes belong in one recipe
 directory with immutable source pins, runtime dependencies, and package revisions.

@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from distro_build import cli, vm, vm_session
+from distro_build import cli, vm, vm_session, vm_media
 from distro_build.boot import sha256
 
 
@@ -31,6 +31,8 @@ class VmSessionTests(unittest.TestCase):
                         "environment": {"LANG": "C"}, "kind": "test-fixture"}
         # The file-copy/state lifecycle is real. GPT/native/process work is
         # covered separately and must not start QEMU for these unit tests.
+        self.media = self.enterContext(patch.object(vm_media, "audio_options",
+            return_value=(["-audiodev", "none,id=hostaudio"], {"backend": "none"})))
         self.validation = self.enterContext(patch.object(vm_session, "validate_disk"))
 
     def initialize(self, name="custom", image=None, runtime=None):
@@ -187,7 +189,7 @@ class VmSessionTests(unittest.TestCase):
         self.assertEqual(list(outside.iterdir()), [outside / "sentinel"])
         self.assertEqual((outside / "sentinel").read_bytes(), b"untouched")
 
-    def start_fixture(self, *, interrupt=False):
+    def start_fixture(self, *, interrupt=False, development=False, kvm=False, kvm_error=None):
         owner = self
         events = []
         directory = self.project / "out/vms/custom"
@@ -233,15 +235,19 @@ class VmSessionTests(unittest.TestCase):
 
         with ExitStack() as stack:
             discover = stack.enter_context(patch.object(vm_session, "discover_runtime", return_value=self.runtime))
-            stack.enter_context(patch.object(vm_session.os, "access", return_value=False))
-            other_run = stack.enter_context(patch.object(vm_session.subprocess, "run", side_effect=AssertionError("No assertion subprocess")))
+            stack.enter_context(patch.object(vm_session.os, "access", return_value=kvm))
+            probe = vm_session.subprocess.CompletedProcess([], int(kvm_error is not None), "", kvm_error or "")
+            other_run = stack.enter_context(patch.object(vm_session.subprocess, "run", return_value=probe))
             popen = stack.enter_context(patch.object(vm_session.subprocess, "Popen", side_effect=launch))
             qualifier = stack.enter_context(patch.object(vm, "run", side_effect=AssertionError("Normal use must not call qualification")))
-            stack.enter_context(patch("sys.stderr", new=io.StringIO()))
-            result = vm_session.start(self.project, self.image)
+            self.stderr = stack.enter_context(patch("sys.stderr", new=io.StringIO()))
+            result = vm_session.start(self.project, self.image, development=development)
         discover.assert_called_once_with(self.project)
         popen.assert_called_once()
-        other_run.assert_not_called()
+        if kvm:
+            other_run.assert_called_once()
+        else:
+            other_run.assert_not_called()
         qualifier.assert_not_called()
         self.assertEqual(sha256(self.image), source_digest)
         self.assertEqual(sha256(self.variables), vars_digest)
@@ -251,6 +257,33 @@ class VmSessionTests(unittest.TestCase):
             fcntl.flock(after_session, fcntl.LOCK_EX | fcntl.LOCK_NB)
         return result, events
 
+    def test_missing_kvm_reports_emulation_and_group_refresh_hint(self):
+        result, _ = self.start_fixture()
+        self.assertEqual(result["acceleration"], "tcg")
+        self.assertIn("lacks read/write access", result["acceleration_failure"])
+        self.assertIn("slow CPU emulation", self.stderr.getvalue())
+        self.assertIn("newgrp kvm", self.stderr.getvalue())
+
+    def test_failed_kvm_probe_preserves_reason_in_warning_and_session(self):
+        result, _ = self.start_fixture(kvm=True, kvm_error="KVM initialization failed")
+        self.assertEqual(result["acceleration"], "tcg")
+        self.assertEqual(result["acceleration_failure"], "KVM initialization failed")
+        self.assertIn("KVM initialization failed", self.stderr.getvalue())
+        self.assertEqual(self.command[self.command.index("-accel") + 1], "tcg,thread=multi")
+
+    def test_successful_kvm_probe_uses_hardware_acceleration_without_fallback(self):
+        result, _ = self.start_fixture(kvm=True)
+        self.assertEqual(result["acceleration"], "kvm")
+        self.assertIsNone(result["acceleration_failure"])
+        self.assertEqual(self.command[self.command.index("-accel") + 1], "kvm")
+        self.assertNotIn("Warning:", self.stderr.getvalue())
+
+    def test_development_channel_is_private_and_only_added_when_requested(self):
+        self.start_fixture(development=True)
+        self.assertIn("virtio-serial-pci,id=development", self.command)
+        self.assertTrue(any("name=org.qemu.guest_agent.0" in argument for argument in self.command))
+        self.assertEqual(self.launch_kwargs["umask"], 0o077)
+
     def test_normal_use_has_writable_private_media_and_waits_for_full_session(self):
         result, events = self.start_fixture()
         command = self.command
@@ -259,7 +292,8 @@ class VmSessionTests(unittest.TestCase):
         self.assertNotIn("-no-reboot", command)
         self.assertNotIn("-S", command)
         self.assertNotIn("CUSTOM_", joined)
-        self.assertIn("gtk,gl=off", command)
+        self.assertIn("gtk,gl=off,zoom-to-fit=off", command)
+        self.assertIn("virtio-vga,xres=1280,yres=720", command)
         self.assertIn("usb-tablet,bus=xhci.0", command)
         self.assertIn("user,id=network", command)
         self.assertIn("virtio-net-pci,netdev=network", command)
@@ -292,8 +326,16 @@ class VmSessionTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "already running"):
                     vm_session.start(self.project, self.image)
             launch.assert_not_called()
+            self.media.assert_not_called()
         self.assertEqual(disk.read_bytes(), b"must retain existing guest changes")
         self.assertEqual(json.loads((directory / "state.json").read_text()), record)
+
+    def test_cli_routes_explicit_media_options(self):
+        with patch.object(vm_session, "start", return_value={}) as start, patch.object(cli, "emit"):
+            self.assertEqual(cli.main(["--project", str(self.project), "vm", "--use",
+                                       "--audio", "pulse", "--usb-camera", "1:2"]), 0)
+        self.assertEqual(start.call_args.kwargs["audio"], "pulse")
+        self.assertEqual(start.call_args.kwargs["usb_camera"], "1:2")
 
     def test_cli_use_routes_to_normal_image_and_never_calls_boot_check(self):
         for override in (None, self.image):

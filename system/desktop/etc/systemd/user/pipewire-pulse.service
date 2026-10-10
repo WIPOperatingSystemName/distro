@@ -1,0 +1,12 @@
+[Unit]
+Description=PipeWire PulseAudio compatibility server
+Requires=pipewire.service
+After=pipewire.service
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/pipewire-pulse
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

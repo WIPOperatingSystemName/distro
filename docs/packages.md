@@ -1,247 +1,106 @@
-# Packages and the native assembly toolkit
+# Packages and ALPM transactions
 
-Custom Distro compiles its own target software. Its Python builder exports
-standard ALPM binary packages, and source-built pacman/libalpm performs real
-package transactions. Using this format does not import Arch packages or its
-filesystem. The exporter is not a second package manager or dependency solver.
+The Python builder compiles this distro's target software and exports standard
+ALPM packages. Source-built pacman/libalpm owns dependency checks, installation,
+upgrades, file ownership and the installed database. The format does not import
+Arch packages or another distro's filesystem.
 
-## Current capabilities
+## Build and dependency model
 
-The backend produces deterministic `.pkg.tar.xz` archives with `.PKGINFO` v2,
-`.BUILDINFO` v2, and gzip-compressed `.MTREE` v2. It retains version/revision,
-runtime dependencies, provides/conflicts/replacements, package architecture,
-configuration backup paths, numeric ownership, modes and symlinks. It does not
-strip binaries or create implicit debug packages. A package stage determines
-the complete payload; split outputs must be staged separately by the builder.
-
-The standard-format references are the upstream [package specification](https://alpm.archlinux.page/specifications/alpm-package.7.html),
-[PKGINFO](https://alpm.archlinux.page/specifications/PKGINFO.5.html),
-[BUILDINFO](https://alpm.archlinux.page/specifications/BUILDINFO.5.html), and
-[ALPM-MTREE](https://alpm.archlinux.page/specifications/ALPM-MTREE.5.html).
-
-The development native toolkit has been built from pacman 7.1.0, libarchive
-3.8.9, OpenSSL 3.5.9, and XZ 5.8.4. Exact source URLs and SHA-256 pins live in
-`src/distro_build/packaging/sources.toml`. These are upstream source archives.
-The host compiler, host libc and host zlib are declared seed inputs for these
-native assembly tools. They are not final OS packages and are never copied into
-the target image. Dependency/build logs and provenance live below
-`out/native-toolkit/`.
-
-This development toolkit deliberately disables curl and GPGME. It accepts only
-explicit local bootstrap transactions; its local repository databases are
-unsigned test artifacts. A public release requires a qualified source-built
-download/signature stack, trusted keys, signed packages/repository databases,
-and release/upgrade gates. This native assembly policy is separate from the
-target pacman package, whose curl/GPGME stack and signed local guest transaction
-have passed the checks in [Authenticated updates](authenticated-updates.md).
-Those checks do not establish public-release readiness.
-
-## Export API
-
-```python
-from pathlib import Path
-from distro_build.packaging import export_package, inspect_package
-
-artifact = export_package(
-    Path("out/stages/example"),
-    Path("out/packages"),
-    {
-        "name": "example",
-        "version": "1.0.0",
-        "revision": 1,
-        "arch": "x86_64",
-        "description": "Example application",
-        "licenses": ["MIT"],
-        "depends": ["glibc>=2.42"],
-        "backup": ["etc/example.conf"],
-    },
-    source_date_epoch=1761955200,
-    provenance={"sources": {"example": "a verified full commit or archive digest"}},
-)
-print(artifact.path, artifact.sha256)
-print(inspect_package(artifact.path))
-```
-
-The builder must resolve and lock dependencies before compilation. Runtime
-dependencies refer to installed binary outputs, not source-recipe directories.
-Native build generators and target libraries must be distinguished in the build
-graph. Architecture alone does not describe libc/ABI compatibility; use separate
-repositories and cache identities for different target ABIs.
-
-`export_package` also accepts `ownership={"path": (uid, gid)}` and an optional
-`install_script=Path(...)`. Default payload ownership is `0:0`, independent of
-the builder's account. Preserved configurations must name packaged regular
-files with relative paths, such as `etc/example.conf`.
-
-Source and payload hashes, flags, toolchain/sysroot, language locks, referenced
-files/hooks, dependency artifacts, and builder/exporter identity belong in the
-builder's input/provenance manifest. `.BUILDINFO` hashes an actual deterministic
-packaging descriptor stored beside the archive as `.PKGBUILD`; the descriptor
-does not pretend to reproduce compilation. The complete compilation provenance
-is the adjacent `.build.json`, which release manifests must bind to the package.
-
-Equal payloads and the same reproducibility timestamp produce equal archive
-bytes. The exporter refuses to overwrite different bytes under the same
-name/version/architecture filename. Increment the package revision for changed
-published payloads or installation metadata, including required ABI rebuilds.
-
-## Archive verification
-
-`inspect_package` reads without extraction. It rejects traversal, duplicate
-members, children below symlinks, reserved metadata collisions, oversized
-archives/metadata, invalid metadata and mismatches between `.MTREE` and actual
-archive contents. Final archives are checked after export, not just staged
-files. Signature checks belong to native pacman and the release trust system.
-
-This initial exporter supports regular files, directories and symlinks. It
-represents hardlinked staging files as separate regular files. Device nodes,
-FIFOs, sockets, imported hardlink archive entries and extended attributes are
-rejected. Capabilities/ACLs/xattrs need a qualified extension before packages
-requiring them can be shipped; they are never silently discarded. Runtime
-devices should normally be created by the OS device manager.
-
-## Build the local toolkit
-
-Run from the project root after preparing the four verified source archives
-under `out/native-toolkit/sources/` using their upstream filenames:
+Ordinary recipes live in `packages/<name>/package.toml`; Telorgon application
+recipes use `application.toml`. Record immutable source pins, version/revision,
+license notices and runtime requirements. Use the Python CLI:
 
 ```sh
-PYTHONPATH=src python3 -c 'from pathlib import Path; from distro_build.packaging.bootstrap_toolkit import build_development_toolkit; build_development_toolkit(Path("out/native-toolkit"), jobs=4)'
+python3 build.py validate
+python3 build.py plan pacman
+python3 build.py affected glibc
+python3 build.py fetch pacman
+python3 build.py build pacman --jobs 4
 ```
 
-`fetch=True` explicitly enables HTTPS fetching through this API. Missing sources
-otherwise fail before compilation. All installs use private prefixes; pacman
-installation is additionally captured with `DESTDIR` so optional upstream
-integration cannot write host paths. The resulting tools are under
-`out/native-toolkit/prefix/bin/`, with private libraries and a `toolkit.json`
-record. Network approvals, if required by the execution environment, are handled
-outside the builder.
+These individual stages assume the bootstrap and private toolkit are ready.
+For a complete initial environment, use `./run` as described in
+[build and run](build.md), rather than assembling the stages by hand.
 
-The generic `build_toolkit(source_dir, prefix, work_dir, env, development=False)`
-also accepts a separately prepared dependency environment. Production mode
-requires curl/GPGME rather than quietly weakening signature policy. It is a
-build interface, not evidence that the production stack has been qualified.
+`native` and `target` dependencies determine compile ordering. Target packages
+receive a private ALPM-composed compile sysroot and validated cross compiler.
+`runtime` dependencies enter the installed image closure. Native generators
+use declared seeds or private source builds and must not enter the target root.
+Image assembly selects systemd's libudev provider instead of conflicting eudev.
 
-## Real local package transactions
+ELF audits reject unintended host interpreters/library paths, missing target
+DSOs and unapproved RPATH/RUNPATH. Probes use the explicit target loader and
+libraries. API checks on the host kernel still require separate guest tests.
 
-```python
-from pathlib import Path
-from distro_build.packaging import PacmanToolkit
+## Archive contract
 
-toolkit = PacmanToolkit(Path("out/native-toolkit/prefix"))
-root = Path("out/roots/package-test")
-toolkit.install(root, [artifact.path], bootstrap=True,
-                expected_hashes={artifact.path.name: artifact.sha256})
-print(toolkit.query(root))
-print(toolkit.query(root, "--owns", str(root.resolve() / "etc/example.conf")))
-```
+The exporter writes deterministic `.pkg.tar.xz` archives with `.PKGINFO`,
+`.BUILDINFO` and gzip-compressed `.MTREE`, retaining runtime dependencies,
+provides/conflicts/replacements, backup paths, numeric ownership, modes and
+symlinks. Package stages define complete payloads; split packages need separate
+stages. Source pins and exact versions live in the recipes, not duplicated
+version tables in the docs.
 
-The small native seed helper calls genuine libalpm load/prepare/commit APIs.
-Dependency checks, conflict handling, configuration preservation and the
-installed-file database all belong to libalpm. It disables both install
-scriptlets and transaction hooks using `ALPM_TRANS_FLAG_NOSCRIPTLET` and
-`ALPM_TRANS_FLAG_NOHOOKS`; ordinary setup is deferred until the target userspace
-can execute. It never fetches URLs. It is only enabled by the development
-toolkit and must not be used to bypass signatures for public updates.
+`distro_build.packaging.export_package` exports a prepared stage.
+`inspect_package` checks archives without extracting them, including metadata,
+member traversal/duplicates, symlink containment and payload/MTREE agreement.
+Regular files, directories and symlinks are supported. Device nodes, FIFOs,
+sockets, imported hardlinks and unqualified xattrs/capabilities are rejected.
+Runtime devices normally come from guest device management.
 
-An unprivileged development transaction uses `fakeroot`. The installed package
-database and archive metadata record intended ownership, but fakeroot does not
-leave real root ownership on files after it exits. Image composition must
-preserve fakeroot state through archive generation or apply the package-owned
-numeric metadata in a privileged disposable build environment. Native file
-integrity/owner checks on the raw unprivileged work tree cannot qualify a final
-installed OS.
+The adjacent `.build.json` retains compilation provenance; `.BUILDINFO` binds
+the actual packaging descriptor. Build identities include source, recipe,
+helper, dependency, compiler and sysroot inputs. Equal supported inputs and
+payloads produce equal archive bytes. Changing published payloads or metadata
+requires a new version/revision: the exporter rejects different bytes under the
+same name/version/architecture.
 
-`toolkit.create_repository(directory, package_paths)` runs source-built
-`repo-add` and creates a standard local database, accompanying file database,
-package copies and a development snapshot manifest. It refuses an existing
-database and duplicate package names. Use a fresh candidate directory. This API
-does not promote stable/testing channels or sign public artifacts.
+## Assembly toolkit and guest pacman
 
-## Source-built guest package manager
+The private native toolkit under `out/native-toolkit/` is built from pinned
+upstream sources with declared host compiler/libc inputs. Its local bootstrap
+transactions use real libalpm, verify package digests and suppress target
+scriptlets/hooks on the host. It is an assembly tool, not an OS package.
+Use `python3 build.py native-toolkit --fetch --jobs 4` to prepare it when
+working on an individual stage.
 
-The archive, curl, GnuPG/GPGME and `pacman` recipes cross-compile
-against the validated source-built glibc and their own declared dependencies.
-The coordinator composes a separate dependency sysroot for each recipe using
-libalpm, then supplies the bootstrap headers. None of these recipes installs
-libraries into the host or the shared bootstrap root. Target compiler sysroot
-arguments and pkg-config search paths are explicit. Each build checks that ELF
-payloads have no embedded library search paths and that their required shared
-libraries exist in its staging area or dependency sysroot.
+The guest pacman package is cross-built against this distro's libc with the
+source-built curl/GPGME/GnuPG dependency stack. Its package defaults require
+signatures. The private development image explicitly records its unsigned
+local-development trust policy; this does not supply public update trust.
+Development deployment verifies the transfer and uses one guest pacman
+transaction. It never replaces executables outside the package database.
 
-The archive dependency chain is glibc → xz/zlib/OpenSSL → libarchive → pacman;
-curl and GPGME add the separately declared download/signature closure. The
-BusyBox shell supplies the guest's scriptlet and local transport commands.
-libarchive configuration must detect source-built gzip, XZ and OpenSSL support;
-silently building an archive library without gzip would break package `.MTREE`
-reading. Host Python, make, shell, Perl, Meson, Ninja and pkg-config are build
-seeds. The resulting target ELF programs run through this distro's own loader
-for initial probes; QEMU boot and transactions remain necessary runtime checks.
+The guest includes pacman, libalpm, pacman-conf, vercmp and the upstream archive
+checker. Bash-dependent makepkg/repository/key-management scripts require a
+separate target dependency profile. Local fixture repositories are created by
+the isolated native toolkit. Neither unsigned fixtures nor a successful signed
+fixture qualify a public update channel.
 
-curl and libarchive revision 2 keep installed SDK flags portable. Their
-pkg-config private dependencies use `${libdir}` rather than a temporary build
-sysroot. `curl-config --cc` accepts the consumer's `CC` or reports `cc`; its
-configure output contains portable options, while the exact original build is
-retained in the compilation receipt. Curl's full static library is disabled and
-`--static-libs` explicitly rejects that capability. The metadata-only exports
-preserve every unrelated compiled payload byte and its original compilation
-identity. A genuine fully static libarchive consumer and a libcurl consumer using
-`pkg-config --static` flags were linked with audited source-built inputs and run;
-the latter resolved all DSOs through the target loader with its cache disabled.
-Evidence is in `out/qualification/sdk-consumers/<identity>/report.json`.
+## Application deployment packages
 
-Guest pacman 7.1.0 revision 2 enables source-built curl and GPGME. Its package
-defaults require signatures for repository databases, packages and direct local
-installation. The ordinary package includes no release keyring; public update
-deployment still requires maintained release trust and lifecycle policy.
-Experimental console images explicitly apply `unsigned-local-development`
-policy with `SigLevel = Never` and a file-only local transport. That generated
-image choice does not weaken the package's strict default. The signed guest
-fixture provisions only ephemeral public verification material and exercises
-real ALPM acceptance/rejection. See [Authenticated updates](authenticated-updates.md)
-for the complete target stack, TLS checks and genuine QEMU evidence.
+`build.py deploy` snapshots the edited source and builds selected apps against
+the recorded SDK. Content-specific `.dev<build-identity>` versions and separate
+receipts under `out/state/apps-development/` preserve immutable package bytes
+without replacing the normal image-composition artifacts.
 
-The guest package includes pacman, libalpm, pacman-conf and vercmp. Bash-dependent
-makepkg, repo-add, pacman-key and database-migration scripts are omitted until
-their target dependencies are packaged. Repositories are currently created by
-the isolated native toolkit. The upstream `testpkg` archive checker is retained.
-The OpenSSL Perl rehash wrapper is also omitted;
-the OpenSSL CLI supplies `openssl rehash` without requiring guest Perl.
+The four package names are `telorgon-shell`, `telorgon-file-explorer`,
+`telorgon-settings-app` and `telorgon-portal-picker`. A framework renderer change
+requires rebuilding all four. [The deployment guide](build.md#deploy-applications-into-a-running-development-vm)
+covers installation, restarts and actual interaction testing.
 
-`packaging.guest_test.prepare_upgrade_fixture(candidate_directory, toolkit)`
-creates a package at revision 1 and a real repo-add repository containing
-revision 2. Image composition installs `initial_package` with the target stack,
-then calls `stage_upgrade_fixture(root, fixture, toolkit)` to seed an edited
-administrator config and the private repository. The package-owned
-`/usr/libexec/custom-distro/check-package-upgrade` runs inside the booted guest.
-It uses `pacman -Syu`, checks the new package version and file ownership, and
-asserts that the edited config survives while the new default becomes `.pacnew`.
-Only a successful run prints `CUSTOM_PACKAGE_UPGRADE_OK`. This is a disposable
-local update test, not evidence of signed or public network updates.
+## Verification and release trust
 
-## Verification
+Archive and integration checks are in `tests/test_packag*.py` and
+`tests/test_target_package_manager.py`. Native tests exercise real transactions,
+dependency rejection, ownership, configuration preservation, `.pacnew`,
+`.pacsave` and repository metadata when the toolkit exists. Guest upgrade tests
+must additionally boot the exact image and run target pacman.
 
-```sh
-python3 -m unittest discover -s tests -p 'test_packag*.py' -v
-python3 -m unittest discover -s tests -p 'test_target_package_manager.py' -v
-```
-
-Archive tests exercise deterministic export, ownership, invalid backups,
-immutable identity collisions, malicious archive paths and payload tampering.
-The native integration tests, when the toolkit is available, exercise actual
-pacman archive reading; libalpm dependency rejection, installation, ownership
-queries and upgrade; edited administrator config preservation plus `.pacnew`;
-removal plus `.pacsave`; suppression of package setup; and standard `repo-add`
-metadata. A missing toolkit explicitly skips integration tests rather than
-substituting mock transactions.
-
-When source-built target packages exist, the target integration test runs the
-guest pacman ELF through its own glibc loader and libraries to read a database
-assembled by native libalpm, query ownership and read the exported upgrade
-archive. This checks native/target format interoperability without implying a
-QEMU boot or an in-guest transaction occurred.
-
-Final public updates must also start from prior supported signed images,
-upgrade using their configured repository and trust, verify data/services and
-reboot. The fixture tests alone do not qualify boot, lifecycle migration,
-power-loss handling, signed updates or whole-system rollback.
+[Testing](testing.md#package-upgrades-and-signatures) describes unsigned and
+strict signed guest fixtures, including negative verification cases.
+A supported release additionally needs maintained public trust, signed immutable
+packages/databases/manifests, previous-version upgrade/reboot tests, key rotation
+and recovery. Keep release private keys outside recipes, images, build workers,
+logs and prompts; see [release requirements](release.md).

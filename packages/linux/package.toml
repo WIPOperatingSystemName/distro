@@ -3,7 +3,7 @@ schema = 1
 [package]
 name = "linux"
 version = "6.12.57"
-revision = 3
+revision = 5
 arch = "x86_64"
 description = "Source-built EFI kernel with QEMU DRM/input, systemd namespaces/cgroups and desktop FUSE support"
 license = "GPL-2.0-only"

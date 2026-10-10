@@ -1,50 +1,47 @@
 # Requirements for supported releases
 
-The current build is an experimental source-built distro. Maintain explicit
-runtime evidence for each release rather than inferring readiness from a boot
-marker or package archive test.
+This is a development distro. Qualify each candidate's actual source, packages,
+image and installed state; an older receipt, successful build or boot marker
+cannot establish a new release's behavior. [Testing](testing.md) describes the
+implemented local gates and their evidence limits.
 
-The local development build has passing exact-image receipts for persistent
-boot, source-built systemd/PAM/logind services, Telorgon software-rendered desktop
-windows and emulated keyboard/presentation/redraw, actual PAM password checks,
-and local/strict-signed package upgrades. See the [README evidence table](../README.md).
-The CI definitions exist but have not run remotely. None of these development
-gates establishes installer/recovery, interactive account enrollment, GUI polkit
-authentication, ScreenCast, physical hardware, public repository delivery or a
-security maintenance service.
-
-| Requirement | Gate |
+| Requirement | Required evidence |
 | --- | --- |
-| Boot and persistent root | Telorgon/UEFI QEMU boot using the composed disk and its exact digest |
-| Desktop | Default Telorgon session; shell, File Explorer, Settings and picker; input, windows and packaged launchers |
-| Sessions and privilege | Service manager, device/session management, PAM login, ordinary user accounts and polkit policy |
-| Runtime services | D-Bus, PipeWire/session policy, networking, power management, certificates and portal brokers |
-| Installation | Disk selection, partitioning, account creation and installation in a disposable VM; no host disk shortcuts |
-| Recovery | Independently bootable recovery path, failed boot/upgrade tests and documented recovery procedure |
-| Updates | Source-built download/signature stack; trusted keys, signed packages and repository metadata; atomic candidate promotion |
-| Upgrade lifecycle | Previous supported image → real full upgrade → reboot; retained data/configuration and working desktop/services |
-| Security maintenance | Track vulnerabilities across libc, parsers, crypto, network services, package tools, privileged services and applications as well as the kernel |
-| Supply chain | Verified source identities, dependency/recipe/toolchain manifests, isolated builders, retained logs and auditable provenance |
-| Reproducibility | Independent clean rebuilds and explained differences; deterministic packaging alone is insufficient |
-| Licensing | Corresponding sources, notices, asset licenses and required static-library relinking materials |
-| Hardware support | Separate physical UEFI, input, storage, GPU and network qualification; QEMU is one target |
+| Boot and persistent root | Exact Telorgon/UEFI disk boot with packaged OS identity |
+| Desktop | Shell and actual app windows, input/presentation, portals and relevant interactions |
+| Sessions and privilege | systemd/device management, PAM, user sessions, real login and polkit behavior |
+| Runtime services | D-Bus, media/session policy, networking, power, certificates and portal brokers |
+| Installation | Disk selection, partitioning, account creation and installation in a disposable VM |
+| Recovery | Independently bootable rescue path and failed boot/update recovery tests |
+| Updates | Source-built download/signature stack, maintained trust, signed packages/databases/manifests |
+| Upgrade lifecycle | Previous supported image → full upgrade → reboot, preserving data/configuration and services |
+| Security maintenance | Vulnerability tracking and response across the complete runtime/application closure |
+| Supply chain | Verified pins, isolated builders, exact toolchain/dependency manifests and auditable provenance |
+| Reproducibility | Independent clean rebuilds and explained differences |
+| Licensing | Corresponding sources, notices, asset licenses and required relinking materials |
+| Hardware | Separate physical UEFI, storage, input, GPU, audio and network qualification |
 
-The selected source versions are pinned development inputs. Pinning prevents
-silent input changes but does not establish that a version is currently safe or
-supported. Before a public release, audit the selected versions against upstream
-advisories, choose a supported maintenance policy, and rebuild the affected
-closure. Maintain an inventory/SBOM with exact versions and dependencies.
+Source pinning prevents silent input changes; it does not establish maintenance
+or security support. Recipes are the version inventory. Audit selected versions
+against upstream advisories, define a supported maintenance policy and retain
+an SBOM with exact dependency/build identities before publication.
 
-Build/package workers produce unsigned candidates. A separate release process
-verifies approved source/build identities and qualification results, then signs
-immutable packages, repository metadata and the manifest. Signing keys belong in
-the release service, never in a PR worker, AI prompt, recipe, disk image or log.
-Promote testing/stable channel pointers only after upgrade and reboot gates pass.
+Build workers produce unsigned candidates. A separate authorized release
+service verifies approved source/build identities and actual qualification,
+then signs immutable packages, repository metadata and the release manifest.
+Keep signing keys out of PR workers, local fixtures, recipes, images and logs.
+Promote channel pointers only after the release and upgrade/reboot gates pass.
+HTTPS transport does not replace package/database signature verification.
+Key rotation/revocation, stale or replayed metadata and offline recovery trust
+also need explicit policy and tests.
 
-The private native assembly toolkit deliberately supports unsigned local file
-repositories. Target pacman now includes source-built curl/GPGME with strict
-signature defaults, and the signed local guest upgrade check has passed; see
-[Authenticated updates](authenticated-updates.md). Public network updates still
-require maintained release trust and lifecycle qualification. HTTPS transport alone does not
-replace package/repository signature verification. Rollback protection, key
-rotation, revocation and stale/replayed metadata policy also require tests.
+Private development images record their local unsigned trust policy; signed
+fixture images carry ephemeral public verification material. Neither is a
+production trust bootstrap. Normal desktop autologin is a private VM policy,
+rather than an implemented installer or account-enrollment workflow.
+
+Remote CI runs, public delivery, screen sharing, physical hardware and recovery
+must be supported by their own current evidence. Inspect the actual package
+capture-capability record rather than assuming that an installed picker or a
+CPU/Vulkan backend establishes sharing support. A passed host-kernel API probe,
+pacman transaction or QEMU desktop test cannot qualify all of these gates.

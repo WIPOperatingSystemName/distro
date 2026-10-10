@@ -148,8 +148,8 @@ def base_package(project: Path, profile: str = "console") -> Path:
 
 def system_policy_package(project: Path, profile: str = "systemd") -> Path:
     source = project / "system/systemd"
-    desktop = project / "system/desktop" if profile in {"desktop", "desktop-use"} else None
-    normal = project / "system/desktop-use" if profile == "desktop-use" else None
+    desktop = project / "system/desktop" if profile in {"desktop", "desktop-use", "desktop-dev"} else None
+    normal = project / "system/desktop-use" if profile in {"desktop-use", "desktop-dev"} else None
     probe = None
     if desktop and not normal:
         pointer = project / "out/qualification/desktop-session-probe/current.json"
@@ -236,7 +236,7 @@ def system_policy_package(project: Path, profile: str = "systemd") -> Path:
         if directory.is_dir() and not directory.is_symlink():
             directory.chmod(0o755)
     (licenses / "LICENSE").chmod(0o644)
-    metadata = {"name": "custom-distro-session", "version": "0.1.0", "revision": 2 if normal else 1,
+    metadata = {"name": "custom-distro-session", "version": "0.1.0", "revision": 3 if normal else (2 if desktop else 1),
                 "arch": "x86_64" if probe else "any", "description": "Telorgon automatic local desktop session" if normal else "Experimental system services and regular-user PAM session qualification",
                 "licenses": ["MIT"], "depends": ["custom-distro-base", "systemd", "dbus", "pam", "util-linux"],
                 "backup": [path.relative_to(stage).as_posix() for path in sorted((stage / "etc").rglob("*")) if path.is_file() and not path.is_symlink()]}
@@ -260,7 +260,7 @@ def console_image(project: Path, existing_root: Path | None = None, *, test_upgr
 def _compose_image(project: Path, existing_root: Path | None = None, *, test_upgrade: bool = False,
                    test_signed_upgrade: bool = False, test_pam_auth: bool = False, profile_name: str = "console") -> dict:
     output = project / "out"
-    if profile_name not in {"console", "systemd", "desktop", "desktop-use"}:
+    if profile_name not in {"console", "systemd", "desktop", "desktop-use", "desktop-dev"}:
         raise BuildError(f"unsupported image profile: {profile_name}")
     if profile_name != "console" and (test_upgrade or test_signed_upgrade):
         raise BuildError("package upgrade fixtures currently require the console profile")
@@ -293,12 +293,12 @@ def _compose_image(project: Path, existing_root: Path | None = None, *, test_upg
                 "package_trust_policy": "signed-ephemeral-test-key" if test_signed_upgrade else "unsigned-local-development",
                 "session_policy_sha256": sha256(policy) if policy else None,
                 "image_ownership": {"home/custom": [1000, 1000]} if policy else {},
-                "qualification": "normal desktop session; separate exact-image qualification required" if profile_name == "desktop-use" else "runtime checks must be run against this exact image digest",
+                "qualification": "normal desktop session; separate exact-image qualification required" if profile_name in {"desktop-use", "desktop-dev"} else "runtime checks must be run against this exact image digest",
                 "capabilities": {"telorgon_bootloader": True, "source_built_libc": True,
                                  "persistent_root": True, "alpm_ownership_database": True,
-                                 "systemd": policy is not None, "desktop": "automatic-local-session" if profile_name == "desktop-use" else "qualification-required" if profile_name == "desktop" else False,
-                                 "screen_cast": False, "graphics": "cpu-drm-kms" if profile_name in {"desktop", "desktop-use"} else "console",
-                                 "signed_updates": test_signed_upgrade,
+                                 "systemd": policy is not None, "desktop": "automatic-local-session" if profile_name in {"desktop-use", "desktop-dev"} else "qualification-required" if profile_name == "desktop" else False,
+                                 "screen_cast": False, "graphics": "cpu-drm-kms" if profile_name in {"desktop", "desktop-use", "desktop-dev"} else "console",
+                                 "signed_updates": test_signed_upgrade, "development_agent": profile_name == "desktop-dev",
                                  "installer": False, "independent_recovery": False}}
     toolkit = PacmanToolkit(output / "native-toolkit/prefix")
     fixture = None

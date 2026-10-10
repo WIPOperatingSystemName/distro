@@ -1,0 +1,17 @@
+[Unit]
+Description=Private QEMU development package deployment agent
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/custom-distro/start-development-agent
+Restart=on-failure
+RestartSec=2
+RuntimeDirectory=custom-distro-development
+RuntimeDirectoryMode=0700
+UMask=0077
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

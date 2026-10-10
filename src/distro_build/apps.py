@@ -8,6 +8,7 @@ host SDK libraries are never substituted for those inputs.
 from __future__ import annotations
 
 import ctypes.util
+import fcntl
 import hashlib
 import json
 import os
@@ -73,7 +74,7 @@ def plan(project: Path, names: list[str] | None = None) -> dict:
         "graphics": {"shell_policy": "Auto (recorded distro source overlay)",
                      "software_path": "existing CPU renderer and DRM/KMS dumb buffers",
                      "vulkan_path": "Vulkan adapter must match the selected DRM device",
-                     "screen_cast": "disabled in the initial CPU desktop profile; upstream portal capture requires Vulkan",
+                     "screen_cast": "enabled when the recorded Telorgon sources declare software-screencast support",
                      "qualification": "QEMU CPU KMS path and physical GPU paths require separate tests"},
         "native_build_rule": "all target libraries and headers come from the recorded distro sysroot",
         "rust_seed_rule": "installed pinned Rust compiler/standard library is a declared bootstrap seed"}
@@ -116,6 +117,14 @@ def _copy_inputs(source: Path, destination: Path, inputs: tuple[str, ...]) -> di
             "cargo_lock_sha256": sha256(destination / "Cargo.lock"), **_git_metadata(source)}
 
 
+def _software_capture_supported(workspace: Path) -> bool:
+    manifest = workspace / "telorgon/crates/telorgon/Cargo.toml"
+    if not manifest.is_file():
+        return False
+    package = tomllib.loads(manifest.read_text()).get("package", {})
+    return package.get("metadata", {}).get("telorgon", {}).get("software-screencast") is True
+
+
 def _shell_overlays(workspace: Path) -> list[dict]:
     path = workspace / "test-shell/src/main.rs"
     before = path.read_text()
@@ -126,13 +135,16 @@ def _shell_overlays(workspace: Path) -> list[dict]:
             or before.count(".capture(Capture::desktop())") != 1):
         raise RuntimeError("Shell source changed; review distro overlay anchors before building")
     after = (before.replace(launcher, "", 1)
-             .replace(".renderer(Renderer::Vulkan)", ".renderer(Renderer::Auto)", 1)
-             .replace(".capture(Capture::desktop())", ".capture(Capture::new())", 1))
+             .replace(".renderer(Renderer::Vulkan)", ".renderer(Renderer::Auto)", 1))
+    capture = _software_capture_supported(workspace)
+    if not capture:
+        after = after.replace(".capture(Capture::desktop())", ".capture(Capture::new())", 1)
     path.write_text(after)
     return [{"path": "test-shell/src/main.rs", "before_sha256": hashlib.sha256(before.encode()).hexdigest(),
              "after_sha256": sha256(path),
              "changes": ["use existing Auto renderer to permit CPU DRM/KMS fallback",
-                         "disable Vulkan-only ScreenCast capture in the initial CPU desktop profile; retain portal broker and picker packages",
+                         ("retain consent-based ScreenCast capture for Vulkan and software renderers" if capture
+                          else "disable capture for older sources without software capture support"),
                          "use packaged Settings launcher instead of developer target/debug path"]}]
 
 
@@ -429,12 +441,17 @@ def _install(app: dict, workspace: Path, binary: Path, stage: Path,
         _write(stage, "usr/share/wayland-sessions/telorgon.desktop",
                "[Desktop Entry]\nName=Telorgon\nComment=Custom Distro Telorgon session\n"
                "Exec=/usr/bin/telorgon-session\nType=Application\nDesktopNames=telorgon-test-shell;\n")
+        capture = _software_capture_supported(workspace)
         _write(stage, "usr/share/xdg-desktop-portal/telorgon-test-shell-portals.conf",
                "[preferred]\norg.freedesktop.impl.portal.FileChooser=telorgon-file-explorer\n"
-               "org.freedesktop.impl.portal.ScreenCast=none\n")
+               f"org.freedesktop.impl.portal.ScreenCast={'telorgon' if capture else 'none'}\n")
+        if capture:
+            _write(stage, "usr/share/xdg-desktop-portal/portals/telorgon.portal",
+                   "[portal]\nDBusName=org.freedesktop.impl.portal.desktop.telorgon\n"
+                   "Interfaces=org.freedesktop.impl.portal.ScreenCast;\nUseIn=telorgon-test-shell;\n")
         _write(stage, "usr/share/custom-distro/capabilities/telorgon-shell.json", json.dumps({
-            "profile": "initial-cpu-desktop", "renderer": "Auto", "screen_cast": False,
-            "reason": "Upstream Telorgon portal capture requires Vulkan; the initial source-built profile uses CPU KMS scanout",
+            "profile": "desktop", "renderer": "Auto", "screen_cast": capture,
+            "capture_backends": ["Vulkan", "Software"] if capture else [],
             "file_chooser_portal": "telorgon-file-explorer", "portal_picker_packaged": True}, indent=2) + "\n")
     inventory = {"scope": "embedded fonts, recorded source patches, cached locked Rust crate notices and declared Rust seed library notices",
                  "files": notices}
@@ -444,7 +461,24 @@ def _install(app: dict, workspace: Path, binary: Path, stage: Path,
 
 def build_app(project: Path, name: str, sysroot: Path | None = None, tools: Path | None = None,
               output: Path | None = None, *, offline: bool = True, jobs: int = 4,
-              toolchain: str = EFI_TOOLCHAIN, manifest: Path | None = None) -> dict:
+              toolchain: str = EFI_TOOLCHAIN, manifest: Path | None = None,
+              profile: str = "release", development: bool = False) -> dict:
+    if name not in catalog(project):
+        raise RuntimeError(f"Unknown application package: {name}")
+    if profile not in {"dev", "release"}:
+        raise RuntimeError("Cargo build profile must be dev or release")
+    locks = project / "out/state/locks"
+    locks.mkdir(parents=True, exist_ok=True)
+    with (locks / f"app-{name}.lock").open("a") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        return _build_app(project, name, sysroot, tools, output, offline=offline, jobs=jobs,
+                          toolchain=toolchain, manifest=manifest, profile=profile, development=development)
+
+
+def _build_app(project: Path, name: str, sysroot: Path | None = None, tools: Path | None = None,
+              output: Path | None = None, *, offline: bool = True, jobs: int = 4,
+              toolchain: str = EFI_TOOLCHAIN, manifest: Path | None = None,
+              profile: str = "release", development: bool = False) -> dict:
     """Build a native ALPM app package against the distro's source-built sysroot."""
     project = Path(project).resolve()
     sysroot = Path(sysroot or project / "out/bootstrap/root").resolve(strict=True)
@@ -481,19 +515,39 @@ def build_app(project: Path, name: str, sysroot: Path | None = None, tools: Path
                                         "adapter": sha256(Path(__file__)), "target_libraries": target_libraries,
                                         "sysroot": sysroot_identity, "compiler": sha256(compiler),
                                         "libc": sha256(sysroot / ".bootstrap-validated.json"),
-                                        "rust": rust_seed, "toolchain": toolchain}, sort_keys=True).encode()).hexdigest()
+                                        "rust": rust_seed, "toolchain": toolchain,
+                                        "profile": profile, "development": development,
+                                        "incremental_adapter": sha256(Path(__file__).with_name("incremental.py"))}, sort_keys=True).encode()).hexdigest()
     work = output / "build" / name / identity
     work.mkdir(parents=True, exist_ok=True)
+    state = project / "out/state" / ("apps-development" if development else "apps") / f"{name}.json"
+    receipt = work / "result.json"
+    if receipt.is_file():
+        cached = json.loads(receipt.read_text())
+        if cached.get("build_identity") == identity and Path(cached["path"]).is_file() and sha256(Path(cached["path"])) == cached.get("sha256"):
+            state.parent.mkdir(parents=True, exist_ok=True)
+            state.write_text(json.dumps(cached, indent=2) + "\n")
+            return cached
+    # Toolchain/library changes isolate Cargo caches; ordinary source edits and
+    # package revision changes reuse the same paths and dependency compilation.
+    context = hashlib.sha256(json.dumps({"rust": rust_seed, "toolchain": toolchain,
+        "compiler": sha256(compiler), "sysroot": sysroot_identity, "profile": profile,
+        "adapter": sha256(Path(__file__)), "incremental_adapter": sha256(Path(__file__).with_name("incremental.py")),
+        "build": app["build"], "requirements": app["requirements"]}, sort_keys=True).encode()).hexdigest()
+    cache = output / "incremental" / name / context
+    from .incremental import synchronize
+    synchronize(workspace, cache / "workspace")
+    workspace = cache / "workspace"
     adapter_snapshot = work / "adapter.py"
     adapter_snapshot.write_bytes(Path(__file__).read_bytes())
     stage = work / "stage"
     if stage.exists():
         shutil.rmtree(stage)
     stage.mkdir()
-    wrapper = work / "target-cc"
+    wrapper = cache / "target-cc"
     _link_wrapper(wrapper, compiler, sysroot, [sysroot, tools, output, Path(rust_sysroot)])
     cpp = tools / "pass2/bin" / f"{GNU_TARGET}-g++"
-    cpp_wrapper = work / "target-cxx"
+    cpp_wrapper = cache / "target-cxx"
     if cpp.is_file() and (tools / "pass2/.runtime-validated.json").is_file():
         _link_wrapper(cpp_wrapper, cpp, sysroot, [sysroot, tools, output, Path(rust_sysroot)])
     cargo_home = output / "cargo-home"
@@ -510,7 +564,8 @@ def build_app(project: Path, name: str, sysroot: Path | None = None, tools: Path
                                     if not Path(dest).exists() else dest)
     env = _pc_environment(sysroot)
     env.update({"PATH": f"{tools / 'native/bin'}:{tools / 'bin'}:{Path(shutil.which('cargo')).parent}:/usr/bin:/bin",
-                "CARGO_HOME": str(cargo_home), "CARGO_TARGET_DIR": str(work / "target"),
+                "CARGO_HOME": str(cargo_home), "CARGO_TARGET_DIR": str(cache / "target"),
+                "CARGO_PROFILE_DEV_DEBUG": "0", "CARGO_PROFILE_DEV_INCREMENTAL": "true",
                 "RUSTUP_HOME": os.environ.get("RUSTUP_HOME", str(Path.home() / ".rustup")),
                 "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER": str(wrapper),
                 "CC_x86_64_unknown_linux_gnu": str(wrapper),
@@ -530,7 +585,7 @@ def build_app(project: Path, name: str, sysroot: Path | None = None, tools: Path
         if (sysroot / directory).is_dir():
             rustflags.append(f"-Lnative={sysroot / directory}")
     env["CARGO_ENCODED_RUSTFLAGS"] = "\x1f".join(rustflags)
-    command = [shutil.which("cargo"), f"+{toolchain}", "build", "--locked", "--release", "--target", RUST_TARGET,
+    command = [shutil.which("cargo"), f"+{toolchain}", "build", "--locked", "--profile", profile, "--target", RUST_TARGET,
                "--bin", app["build"]["binary"], "-j", str(jobs)]
     if offline:
         command.append("--offline")
@@ -541,7 +596,8 @@ def build_app(project: Path, name: str, sysroot: Path | None = None, tools: Path
     if result.returncode:
         raise RuntimeError(f"Target application build failed ({result.returncode}); see {log}")
     _verify_snapshot(source_manifest)
-    binary = work / "target" / RUST_TARGET / "release" / app["build"]["binary"]
+    binary = work / app["build"]["binary"]
+    shutil.copy2(cache / "target" / RUST_TARGET / ("debug" if profile == "dev" else "release") / app["build"]["binary"], binary)
     closure = _elf_closure(binary, sysroot)
     notices = _install(app, workspace, binary, stage, cargo_home, Path(rust_sysroot))
     provenance = {"kind": "source-built-application-with-declared-rust-seed", "build_identity": identity,
@@ -551,18 +607,20 @@ def build_app(project: Path, name: str, sysroot: Path | None = None, tools: Path
                   "rust_seed_sysroot": rust_sysroot, "target_compiler": str(compiler), "target_sysroot": str(sysroot),
                   "target_sysroot_identity": sysroot_identity,
                   "target_libraries": target_libraries, "elf": closure, "command": command, "log": str(log),
-                  "license_notices": notices,
+                  "license_notices": notices, "cargo_profile": profile, "cargo_cache": str(cache),
                   "runtime_qualification": "not established by compilation or ELF closure"}
     _write(stage, f"usr/share/custom-distro/provenance/{name}.json", json.dumps(provenance, indent=2) + "\n")
     from .packaging import export_package
     metadata = {**app["package"], "depends": app["runtime"]["packages"], "licenses": [app["package"]["license"]]}
+    if development:
+        metadata["version"] += ".dev" + identity
     artifact = export_package(stage, project / "out/packages" / name / identity, metadata, source_date_epoch=1756684800,
                               provenance=provenance)
     result = {"package": name, "build_identity": identity, "path": str(artifact.path),
               "sha256": sha256(artifact.path), "stage": str(stage), "binary": str(binary), "provenance": provenance}
-    state = project / "out/state/apps" / f"{name}.json"
     state.parent.mkdir(parents=True, exist_ok=True)
     state.write_text(json.dumps(result, indent=2) + "\n")
+    receipt.write_text(json.dumps(result, indent=2) + "\n")
     return result
 
 

@@ -1,0 +1,22 @@
+#!/bin/sh
+set -eu
+export PATH=/usr/bin:/bin
+# devtmpfs provides vport nodes even without an installed udev daemon.
+# Resolve the channel by its sysfs name rather than relying on udev aliases.
+count=0
+while [ "$count" -lt 60 ]; do
+    for entry in /sys/class/virtio-ports/*; do
+        [ -r "$entry/name" ] || continue
+        [ "$(cat "$entry/name")" = org.qemu.guest_agent.0 ] || continue
+        device=/dev/${entry##*/}
+        [ -c "$device" ] || continue
+        exec /usr/bin/qemu-ga --method=virtio-serial --path="$device" \
+            --statedir=/run/custom-distro-development \
+            --pidfile=/run/custom-distro-development/qemu-ga.pid \
+            --allow-rpcs=guest-sync-delimited,guest-ping,guest-info,guest-file-open,guest-file-write,guest-file-close,guest-file-flush,guest-exec,guest-exec-status
+    done
+    count=$((count + 1))
+    sleep 1
+done
+echo 'The private QEMU development channel is missing.' >&2
+exit 1
