@@ -102,5 +102,7 @@ Immediately before submission, fetch upstream again and require its default
 branch to be an ancestor of the submitted HEAD. Integrate missing changes and
 rerun affected checks. Record that verified commit or the concrete sync blocker.
 Commit/PR approval does not authorize merging, publishing a release or advancing
-distro submodule pins. Maintainer automation and approval policy live in the
-[organization automation guide](https://github.com/WIPOperatingSystemName/.github/tree/main/automation).
+distro submodule pins. Maintainers review and merge PRs manually; ordinary source
+and catalog/tooling checks remain in place. Component merges do not update distro
+pins. Propose those updates separately and record the relevant build and VM
+results. See the [maintainer guide](https://github.com/WIPOperatingSystemName/.github/tree/main/automation).
