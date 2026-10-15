@@ -125,7 +125,8 @@ def develop(project: Path, *, name: str, source_root: Path | None = None, jobs: 
                     raise RuntimeError("VM profile is not registered")
                 settings = tomllib.loads((project / "profiles" / (profile_name + ".toml")).read_text())
                 from .compose import runtime_packages
-                closure = runtime_packages(project, settings["packages"], providers={"libudev": "systemd"})
+                selected_packages = settings["system_shell"]["packages"] if guest.get("system_shell") else settings["packages"]
+                closure = runtime_packages(project, selected_packages, providers={"libudev": "systemd"})
                 names = sorted(set(closure) & applications.keys())
                 native = set(closure) - applications.keys()
                 errors = compatibility(guest, installed, sdk, native)
@@ -165,7 +166,8 @@ def develop(project: Path, *, name: str, source_root: Path | None = None, jobs: 
                     raise RuntimeError("Base inputs changed during compilation; retry before installing")
                 report["stage"] = "install"
                 if artifacts:
-                    report["installation"] = install(agent, artifacts, restart=restart and policy["desktop"])
+                    report["installation"] = install(agent, artifacts, restart=restart and policy["desktop"],
+                                                     **({"system_shell": True} if guest.get("system_shell") else {}))
                     if restart and not policy["desktop"] and policy["services"]:
                         agent.execute("/usr/bin/systemctl", ["--user", "--machine=custom@.host", "try-restart", *policy["services"]])
                 else:

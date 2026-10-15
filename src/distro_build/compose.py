@@ -18,6 +18,20 @@ from .packaging import PacmanToolkit, export_package, inspect_package
 from .sources import sha256
 
 
+def system_shell_selection(profile: dict, requested: bool | None) -> bool:
+    default = profile.get("system_shell", {}).get("default", False)
+    if not isinstance(default, bool):
+        raise BuildError("system_shell.default must be a boolean")
+    return default if requested is None else requested
+
+
+def desktop_image_name(profile_name: str, profile: dict, system_shell: bool) -> str:
+    suffix = ""
+    if system_shell != system_shell_selection(profile, None):
+        suffix = "-system-shell" if system_shell else "-user-shell"
+    return f"custom-distro-{profile_name}{suffix}.img"
+
+
 def _artifact(project: Path, name: str) -> dict:
     state = project / "out/state/packages" / f"{name}.json"
     if not state.is_file():
@@ -134,7 +148,7 @@ def base_package(project: Path, profile: str = "console") -> Path:
     (stage / "root").chmod(0o700)
     if profile != "console":
         (stage / "home/custom").chmod(0o700)
-    metadata = {"name": "custom-distro-base", "version": "0.1.0", "revision": 1,
+    metadata = {"name": "custom-distro-base", "version": "0.1.0", "revision": 2,
                 "arch": "any", "description": "Custom Distro experimental console system policy",
                 "licenses": ["MIT"], "depends": ["busybox"],
                 "backup": ["etc/hostname", "etc/passwd", "etc/group", "etc/shadow", "etc/custom-distro/init-command", "etc/custom-distro/build-manifest.json"]}
@@ -146,10 +160,13 @@ def base_package(project: Path, profile: str = "console") -> Path:
     return artifact.path
 
 
-def system_policy_package(project: Path, profile: str = "systemd") -> Path:
+def system_policy_package(project: Path, profile: str = "systemd", *, system_shell: bool = False) -> Path:
     source = project / "system/systemd"
     desktop = project / "system/desktop" if profile in {"desktop", "desktop-use", "desktop-dev"} else None
     normal = project / "system/desktop-use" if profile in {"desktop-use", "desktop-dev"} else None
+    if system_shell and not normal:
+        raise BuildError("system shell requires a desktop-use or desktop-dev image")
+    shell_policy = project / "system/system-shell" if system_shell else None
     probe = None
     if desktop and not normal:
         pointer = project / "out/qualification/desktop-session-probe/current.json"
@@ -160,7 +177,8 @@ def system_policy_package(project: Path, profile: str = "systemd") -> Path:
             raise BuildError("desktop qualification client differs from its recorded build")
     digest = hashlib.sha256(Path(__file__).read_bytes())
     digest.update(profile.encode())
-    for tree in (source, *([desktop] if desktop else []), *([normal] if normal else [])):
+    for tree in (source, *([desktop] if desktop else []), *([normal] if normal else []),
+                 *([shell_policy] if shell_policy else [])):
         for path in sorted(tree.rglob("*")):
             if path.is_symlink():
                 digest.update(path.relative_to(tree).as_posix().encode())
@@ -185,6 +203,8 @@ def system_policy_package(project: Path, profile: str = "systemd") -> Path:
             if path.is_dir() and "-check.service" in path.as_posix():
                 path.rmdir()
         shutil.copytree(normal, stage, dirs_exist_ok=True, symlinks=True)
+    if shell_policy:
+        shutil.copytree(shell_policy, stage, dirs_exist_ok=True)
     if probe:
         binary = stage / "usr/libexec/custom-distro/desktop-session-probe"
         binary.parent.mkdir(parents=True)
@@ -220,6 +240,10 @@ def system_policy_package(project: Path, profile: str = "systemd") -> Path:
     if normal:
         links = {name: target for name, target in links.items() if "-check.service" not in name}
         links["etc/systemd/system/graphical.target.wants/custom-distro-desktop.service"] = "../custom-distro-desktop.service"
+    if shell_policy:
+        links.pop("etc/systemd/system/graphical.target.wants/custom-distro-desktop.service")
+        (stage / "etc/systemd/system/graphical.target.wants/custom-distro-desktop.service").unlink(missing_ok=True)
+        links["etc/systemd/system/graphical.target.wants/telorgon-shell.service"] = "../telorgon-shell.service"
     for name, target in links.items():
         path = stage / name
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -236,48 +260,55 @@ def system_policy_package(project: Path, profile: str = "systemd") -> Path:
         if directory.is_dir() and not directory.is_symlink():
             directory.chmod(0o755)
     (licenses / "LICENSE").chmod(0o644)
-    metadata = {"name": "custom-distro-session", "version": "0.1.0", "revision": 3 if normal else (2 if desktop else 1),
-                "arch": "x86_64" if probe else "any", "description": "Telorgon automatic local desktop session" if normal else "Experimental system services and regular-user PAM session qualification",
+    metadata = {"name": "custom-distro-session", "version": "0.1.0", "revision": 8 if system_shell else 4 if normal else (3 if desktop else 2),
+                "arch": "x86_64" if probe else "any", "description": "Telorgon independent system shell" if system_shell else "Telorgon automatic local desktop session" if normal else "Experimental system services and regular-user PAM session qualification",
                 "licenses": ["MIT"], "depends": ["custom-distro-base", "systemd", "dbus", "pam", "util-linux"],
                 "backup": [path.relative_to(stage).as_posix() for path in sorted((stage / "etc").rglob("*")) if path.is_file() and not path.is_symlink()]}
     if desktop:
         metadata["depends"] += ["telorgon-shell", "wayland", "networkmanager", "polkit", "upower", "power-profiles-daemon"]
     return export_package(stage, project / "out/packages/custom-distro-session" / identity, metadata,
                           source_date_epoch=1756684800, provenance={"source_kind": "catalog-local", "system_identity": identity,
-                          "desktop_probe": probe, "scope": "automatic local desktop; locked accounts; no qualification clients" if normal else "private VM session qualification; locked accounts; no enrolled login password"}).path
+                          "desktop_probe": probe, "scope": "independent system compositor; no user desktop attached" if system_shell else "automatic local desktop; locked accounts; no qualification clients" if normal else "private VM session qualification; locked accounts; no enrolled login password"}).path
 
 
 def console_image(project: Path, existing_root: Path | None = None, *, test_upgrade: bool = False,
-                  test_signed_upgrade: bool = False, test_pam_auth: bool = False, profile_name: str = "console") -> dict:
+                  test_signed_upgrade: bool = False, test_pam_auth: bool = False, profile_name: str = "console",
+                  system_shell: bool | None = None) -> dict:
     locks = project / "out/locks"
     locks.mkdir(parents=True, exist_ok=True)
     with (locks / "image.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         return _compose_image(project, existing_root, test_upgrade=test_upgrade,
-                              test_signed_upgrade=test_signed_upgrade, test_pam_auth=test_pam_auth, profile_name=profile_name)
+                              test_signed_upgrade=test_signed_upgrade, test_pam_auth=test_pam_auth, profile_name=profile_name,
+                              system_shell=system_shell)
 
 
 def _compose_image(project: Path, existing_root: Path | None = None, *, test_upgrade: bool = False,
-                   test_signed_upgrade: bool = False, test_pam_auth: bool = False, profile_name: str = "console") -> dict:
+                   test_signed_upgrade: bool = False, test_pam_auth: bool = False, profile_name: str = "console",
+                   system_shell: bool | None = None) -> dict:
     from . import progress
     progress.detail("Preparing OS packages and system policy")
     output = project / "out"
     if profile_name not in {"console", "systemd", "desktop", "desktop-use", "desktop-dev"}:
         raise BuildError(f"unsupported image profile: {profile_name}")
+    if system_shell and profile_name not in {"desktop-use", "desktop-dev"}:
+        raise BuildError("--system-shell requires --profile desktop-use or desktop-dev")
     if profile_name != "console" and (test_upgrade or test_signed_upgrade):
         raise BuildError("package upgrade fixtures currently require the console profile")
     if test_pam_auth and profile_name != "systemd":
         raise BuildError("password-authentication fixture requires --profile systemd")
     profile = tomllib.loads((project / f"profiles/{profile_name}.toml").read_text())
+    system_shell = system_shell_selection(profile, system_shell)
     if profile.get("schema") != 1:
         raise BuildError("unsupported console profile schema")
     if sum((test_upgrade, test_signed_upgrade, test_pam_auth)) > 1:
         raise BuildError("choose one qualification fixture per disposable image")
-    selected = list(profile["packages"]) + (["gnupg"] if test_signed_upgrade else [])
+    selected = list(profile["system_shell"]["packages"] if system_shell else profile["packages"])
+    selected += ["gnupg"] if test_signed_upgrade else []
     artifacts = [_artifact(project, name) for name in runtime_packages(project, selected,
                  providers={"libudev": "systemd"} if profile_name != "console" else {})]
     base = base_package(project, profile_name)
-    policy = system_policy_package(project, profile_name) if profile_name != "console" else None
+    policy = system_policy_package(project, profile_name, system_shell=system_shell) if profile_name != "console" else None
     loader = output / "loader/cargo-target/x86_64-unknown-uefi/release/boot-efi.efi"
     validate_efi(loader)
     manifest = {"name": "Custom Distro", "version": "0.1.0", "profile": f"experimental-{profile_name}",
@@ -292,13 +323,14 @@ def _compose_image(project: Path, existing_root: Path | None = None, *, test_upg
                 "base_package_sha256": sha256(base), "test_upgrade": test_upgrade,
                 "test_signed_upgrade": test_signed_upgrade,
                 "test_pam_auth": test_pam_auth,
+                "system_shell": system_shell,
                 "package_trust_policy": "signed-ephemeral-test-key" if test_signed_upgrade else "unsigned-local-development",
                 "session_policy_sha256": sha256(policy) if policy else None,
                 "image_ownership": {"home/custom": [1000, 1000]} if policy else {},
-                "qualification": "normal desktop session; separate exact-image qualification required" if profile_name in {"desktop-use", "desktop-dev"} else "runtime checks must be run against this exact image digest",
+                "qualification": "independent renderer with PAM login, user applications, display, wallpaper, audio and FileChooser; separate exact-image qualification required" if system_shell else "normal desktop session; separate exact-image qualification required" if profile_name in {"desktop-use", "desktop-dev"} else "runtime checks must be run against this exact image digest",
                 "capabilities": {"telorgon_bootloader": True, "source_built_libc": True,
                                  "persistent_root": True, "alpm_ownership_database": True,
-                                 "systemd": policy is not None, "desktop": "automatic-local-session" if profile_name in {"desktop-use", "desktop-dev"} else "qualification-required" if profile_name == "desktop" else False,
+                                 "systemd": policy is not None, "desktop": "system-shell" if system_shell else "automatic-local-session" if profile_name in {"desktop-use", "desktop-dev"} else "qualification-required" if profile_name == "desktop" else False,
                                  "screen_cast": False, "graphics": "cpu-drm-kms" if profile_name in {"desktop", "desktop-use", "desktop-dev"} else "console",
                                  "signed_updates": test_signed_upgrade, "development_agent": profile_name == "desktop-dev",
                                  "installer": False, "independent_recovery": False}}
@@ -383,6 +415,8 @@ def _compose_image(project: Path, existing_root: Path | None = None, *, test_upg
     uuid = root_uuid(root)
     boot = stage_esp(loader, kernels[0], initramfs, esp, root_uuid=uuid)
     image_name = "custom-distro-pam-auth-test.img" if test_pam_auth else "custom-distro-signed-update-test.img" if test_signed_upgrade else "custom-distro-update-test.img" if test_upgrade else f"custom-distro-{profile_name}.img" if policy else "custom-distro.img"
+    if profile_name in {"desktop-use", "desktop-dev"}:
+        image_name = desktop_image_name(profile_name, profile, system_shell)
     progress.detail("Writing the bootable OS disk image")
     image = build_disk(esp, root, output / "images" / f"candidate-{identity}.img", size_mib=profile.get("image_size_mib", 1024), root_uuid=uuid,
                        ownership={"home/custom": (1000, 1000)} if policy else None)

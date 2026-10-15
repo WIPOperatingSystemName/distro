@@ -3,7 +3,7 @@ schema = 1
 [package]
 name = "telorgon-settings-app"
 version = "0.1.0"
-revision = 4
+revision = 8
 arch = "x86_64"
 description = "Telorgon display, audio, network, power and personalization settings"
 license = "GPL-3.0-or-later"
@@ -24,5 +24,5 @@ wayland_xml = false
 bindgen = false
 
 [runtime]
-packages = ["glibc", "libgcc", "libstdc++", "wayland", "libxkbcommon", "dbus", "networkmanager", "upower", "power-profiles-daemon", "polkit", "telorgon-shell"]
+packages = ["glibc", "libgcc", "libstdc++", "wayland", "libxkbcommon", "dbus", "networkmanager", "upower", "power-profiles-daemon", "polkit", "telorgon-shell", "xdg-desktop-portal", "telorgon-file-explorer"]
 files = ["/usr/bin/dbus-daemon"]

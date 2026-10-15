@@ -44,3 +44,14 @@ Implement application and framework changes in their owning repositories under
 `sources/`. Generated snapshots, caches and evidence belong under `out/`.
 This is a development system; runtime reports qualify only the images and
 packages they identify.
+
+The development profile's [system shell](docs/build.md#independent-system-shell) starts
+Telorgon under a dedicated service account, independently of a user's session.
+It authenticates through a separate PAM session manager and uses the same
+renderer for login and the user's desktop. The desktop launches applications
+under the authenticated user's account. Settings can preview and save display
+changes, wallpaper and sound preferences for that user. The user session owns
+its audio and portal services and releases them on logout. Add Photo uses the
+user's Telorgon file chooser. The build guide covers private VM password
+enrollment and verified
+deployment of completed application packages while an image build is running.

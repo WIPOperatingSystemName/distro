@@ -303,11 +303,13 @@ def reuse_package_set(project: Path, recipes: dict, ordered: list) -> bool:
 def build_and_run(project: Path, args: argparse.Namespace) -> int:
     """Build through the existing CLI stages, then boot the composed image."""
     from . import apps, vm, vm_session
-    from .compose import console_image, runtime_packages
+    from .compose import console_image, runtime_packages, system_shell_selection
     from .runner import run
 
     started = time.monotonic()
     desktop = args.profile in {"desktop-use", "desktop-dev"}
+    if args.system_shell and not desktop:
+        raise BuildError("--system-shell requires --profile desktop-use or desktop-dev")
     if desktop and args.headless:
         raise BuildError("--headless requires --profile console or --profile systemd")
     if args.name and not desktop:
@@ -327,8 +329,12 @@ def build_and_run(project: Path, args: argparse.Namespace) -> int:
 
     jobs = str(args.jobs)
     profile = tomllib.loads((project / f"profiles/{args.profile}.toml").read_text())
-    packages = [] if desktop else runtime_packages(project, profile["packages"],
-        providers={"libudev": "systemd"} if args.profile == "systemd" else {})
+    args.system_shell = system_shell_selection(profile, args.system_shell)
+    selected = profile["system_shell"]["packages"] if args.system_shell else profile["packages"]
+    closure = runtime_packages(project, selected, providers={"libudev": "systemd"} if args.profile != "console" else {})
+    application_catalog = apps.catalog(project)
+    app_names = [name for name in application_catalog if not args.system_shell or name in closure]
+    packages = [name for name in closure if name not in application_catalog] if args.system_shell else [] if desktop else closure
     online = ["--offline"] if args.offline else ["--online"]
     sources = ["--source-root", str(source_root)]
     cache = DevelopmentCache(project, args.profile, verify=args.verify)
@@ -406,21 +412,22 @@ def build_and_run(project: Path, args: argparse.Namespace) -> int:
                 if not readiness["ready_to_build"]:
                     emit(readiness)
                     raise BuildError("desktop SDK preflight failed; see missing inputs above")
-                step("apps", "build", "--sysroot", sdk["sysroot"], "--jobs", jobs, *sources, *online)
+                step("apps", "build", *(app_names if args.system_shell else []), "--sysroot", sdk["sysroot"], "--jobs", jobs, *sources, *online)
 
             cache.run("apps", lambda: engine_inputs(project, ["apps", "source_bundle"]) + list((project / "packages").glob("*/application.toml")) + [project / "source-projects.toml"] + rust_seeds + sdk_outputs(None)
                       + [source_root / name for name in apps.source_inputs(project)],
-                      lambda _: package_outputs(project, list(apps.catalog(project)), applications=True), applications,
+                      lambda _: package_outputs(project, app_names, applications=True), applications,
                       options={name: _git_metadata(source_root / name) for name in apps.source_inputs(project)})
 
         def image():
             emit({"event": "stage", "command": ["image", "--profile", args.profile]})
-            return console_image(project, profile_name=args.profile)
+            return console_image(project, profile_name=args.profile, system_shell=args.system_shell)
 
         cache_inputs = lambda: engine_inputs(project, ["compose"]) + [project / "system", project / "profiles" / f"{args.profile}.toml"] + loader + package_outputs(project, names) + (
-            package_outputs(project, list(apps.catalog(project)), applications=True) if desktop else [])
+            package_outputs(project, app_names, applications=True) if desktop else [])
         report = cache.run("image", cache_inputs,
-                          lambda result: [Path(result["image"]["path"])] if result else [], image)
+                          lambda result: [Path(result["image"]["path"])] if result else [], image,
+                          options={"system_shell": args.system_shell})
     emit({"event": "image", "path": report["image"]["path"], "sha256": report["image"]["sha256"]})
     emit({"event": "ready-to-boot", "elapsed_seconds": round(time.monotonic() - started, 2)})
     image = Path(report["image"]["path"])
@@ -460,6 +467,11 @@ def parser() -> argparse.ArgumentParser:
     action.add_argument("--all", action="store_true", help="Also remove downloaded archives and saved VMs")
     action = actions.add_parser("run", help="Build the OS image from source and run it in QEMU")
     action.add_argument("--profile", choices=("desktop-use", "desktop-dev", "systemd", "console"), default="desktop-use")
+    shell = action.add_mutually_exclusive_group()
+    shell.add_argument("--system-shell", dest="system_shell", action="store_true", default=None,
+                       help="Boot the independent login compositor (default for desktop-dev)")
+    shell.add_argument("--user-shell", dest="system_shell", action="store_false",
+                       help="Use the automatic user desktop instead of the login compositor")
     action.add_argument("--jobs", type=positive_integer, default=jobs_default, help="Compiler job budget (default: CPU/memory aware, up to 8)")
     action.add_argument("--package-workers", type=positive_integer, default=2, help="Concurrent ready native packages sharing --jobs (default: 2)")
     action.add_argument("--no-progress", action="store_true", help="Disable the progress display and keep JSON event output")
@@ -472,6 +484,8 @@ def parser() -> argparse.ArgumentParser:
     action.add_argument("--output", type=Path, help="Console/systemd boot evidence directory")
     actions.add_parser("doctor", help="Audit host seed tools and environment")
     actions.add_parser("validate", help="Validate package recipes and dependency graph")
+    action = actions.add_parser("dev-password", help="Enroll a password for custom in a running private desktop-dev VM")
+    action.add_argument("--name", default="dev", help="Running development VM name (default: dev)")
     action = actions.add_parser("sources", help="Clone or fast-forward registered component main branches")
     action.add_argument("action", choices=("sync",))
     action.add_argument("--source-root", type=Path)
@@ -511,6 +525,11 @@ def parser() -> argparse.ArgumentParser:
     action.add_argument("--offline", action="store_true", help="Export local sources without updating them")
     action = actions.add_parser("image", help="Compose a source-built system profile")
     action.add_argument("--profile", choices=("console", "systemd", "desktop", "desktop-use", "desktop-dev"), default="console")
+    shell = action.add_mutually_exclusive_group()
+    shell.add_argument("--system-shell", dest="system_shell", action="store_true", default=None,
+                       help="Select the login compositor (default for desktop-dev)")
+    shell.add_argument("--user-shell", dest="system_shell", action="store_false",
+                       help="Select the automatic user desktop policy")
     action.add_argument("--root", type=Path)
     action.add_argument("--test-upgrade", action="store_true")
     action.add_argument("--test-signed-upgrade", action="store_true", help="Build a disposable strict-signature positive/negative upgrade test image")
@@ -558,6 +577,7 @@ def parser() -> argparse.ArgumentParser:
     network.add_argument("--offline", action="store_true", help="Use local sources and cached Cargo inputs")
     action.add_argument("--build-profile", choices=("dev", "release"), default="dev")
     action.add_argument("--no-restart", action="store_true", help="Install packages without restarting the desktop; reopen updated apps manually")
+    action.add_argument("--reuse-built", action="store_true", help="Reuse matching completed regular application builds without waiting for the image build lock; requires --offline")
     action.add_argument("--timeout", type=vm_timeout, default=120, help="Guest command deadline in seconds")
     return command
 
@@ -673,7 +693,11 @@ def _main(argv: list[str] | None = None, *, quiet: bool = False) -> int:
         elif args.command == "image":
             from .compose import console_image
             report(console_image(project, args.root, test_upgrade=args.test_upgrade, test_signed_upgrade=args.test_signed_upgrade,
-                               test_pam_auth=args.test_pam_auth, profile_name=args.profile))
+                               test_pam_auth=args.test_pam_auth, profile_name=args.profile,
+                               system_shell=args.system_shell))
+        elif args.command == "dev-password":
+            from .development_accounts import enroll_password, prompt_password
+            report(enroll_password(project, name=args.name, password=prompt_password()))
         elif args.command == "vm":
             if not args.use and (args.audio != "auto" or args.usb_camera):
                 raise BuildError("--audio and --usb-camera require --use")
@@ -709,10 +733,12 @@ def _main(argv: list[str] | None = None, *, quiet: bool = False) -> int:
             return 0 if result["success"] else 1
         elif args.command == "deploy":
             from .deploy import deploy
+            if args.reuse_built and not args.offline:
+                raise BuildError("--reuse-built requires --offline")
             upstream.synchronize(project, args.source_root, offline=args.offline, emit=source_status)
             report(deploy(project, args.names, name=args.name, source_root=args.source_root,
                           jobs=args.jobs, offline=args.offline, profile=args.build_profile,
-                          restart=not args.no_restart, timeout=args.timeout, emit=emit))
+                          restart=not args.no_restart, timeout=args.timeout, reuse_built=args.reuse_built, emit=emit))
         elif args.command == "apps":
             from . import apps
             if args.action == "plan":

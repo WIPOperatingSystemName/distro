@@ -445,7 +445,7 @@ parts = { "systemd as PID 1" = "Orders and supervises boot and system services t
 kind = "Desktop shell and Wayland compositor"
 purpose = "Owns the desktop background, taskbar, application/window management, composition and routing of graphical input."
 use = "Uses Telorgon's compositor host to display Wayland clients and talks to audio, network, power, tray and settings services. Distro packaging supplies its session launcher, desktop entry and portal preferences."
-parts = { "telorgon-test-shell" = "The actual shell executable built from sources/test-shell.", "telorgon-session" = "Sets the desktop/session identity and executes the shell.", "Shell settings service" = "Exposes the shell-owned display and personalization controls used by Settings.", "Wayland session entry" = "Registers Telorgon as a graphical session.", "Portal preferences and capability record" = "Select File Explorer for FileChooser and record whether the packaged SDK enables ScreenCast." }
+parts = { "telorgon-test-shell" = "The actual shell executable built from sources/test-shell.", "telorgon-session" = "Sets the desktop/session identity and executes the shell.", "Shell settings service" = "Exposes the shell-owned display and personalization controls used by Settings.", "Wayland session entry" = "Registers Telorgon as a graphical session.", "Portal preferences and capability record" = "Select File Explorer for FileChooser and record whether the packaged SDK enables ScreenCast. The independent system shell uses a user-owned FileChooser and disables ScreenCast pending a session bridge." }
 
 [packages.upower]
 kind = "Power-device service and client API"
@@ -604,6 +604,14 @@ ui = "Mounted UI, layout, text, overlays, accessibility semantics and presentati
 "system/desktop-use/usr/lib/custom-distro/start-desktop-session" = "Keeps the PAM session open, imports its environment into the user manager and waits for the graphical session target."
 "system/desktop-use/usr/lib/custom-distro/start-telorgon-shell" = "Normal shell launcher: creates the per-user shell log and runs telorgon-session."
 "system/desktop-use/usr/lib/custom-distro/wait-telorgon-shell" = "Normal readiness helper: verifies the actual Wayland socket, updates activation environments and records the socket for clients."
+"system/system-shell/etc/systemd/system/telorgon-shell.service" = "Default desktop-dev system compositor, independent of PAM and user managers, with private runtime/state/cache directories and protected home directories. Waits for the system control bus name, then requests the login view as root."
+"system/system-shell/etc/systemd/system/telorgon-session-manager.service" = "Separate privileged session manager. Each password attempt runs PAM in a fresh worker; successful sessions retain an unprivileged helper that discovers and launches the user's applications and supplies a session-specific Wayland listener to the renderer. Logout ends the session scope and revokes its clients."
+"system/system-shell/etc/pam.d/telorgon-session" = "Local password and account checks followed by pam_unix, loginuid and pam_systemd session setup in the same PAM transaction."
+"system/system-shell/etc/pam.d/telorgon-password" = "Explicit root password enrollment through pam_unix, which owns hashing, locking and shadow-file updates. The development CLI sends the new password on private stdin."
+"system/system-shell/etc/sysusers.d/telorgon-shell.conf" = "Creates the dedicated shell account and grants seat/render device access."
+"system/system-shell/etc/telorgon/login-users" = "Explicit list of local interactive accounts offered by the login view, initially custom. This does not unlock accounts or authorize a session."
+"system/system-shell/usr/share/dbus-1/system.d/org.telorgon.SystemShell1.conf" = "Restricts system shell control to root and grants only the dedicated renderer account ownership of its bus name."
+"system/system-shell/usr/share/dbus-1/system.d/org.telorgon.Session1.conf" = "Restricts session management to root and the dedicated renderer account. Ordinary users cannot request authentication, attach desktops or end sessions."
 
 [packages.hicolor-icon-theme]
 kind = "Desktop icon metadata"

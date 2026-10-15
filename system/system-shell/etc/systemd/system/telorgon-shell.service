@@ -1,0 +1,47 @@
+[Unit]
+Description=Telorgon system shell
+Requires=dbus.service seatd.service custom-distro-desktop-caches.service
+Wants=telorgon-session-manager.service
+After=telorgon-session-manager.service
+After=systemd-sysusers.service systemd-udev-trigger.service dbus.service seatd.service custom-distro-desktop-caches.service
+Conflicts=custom-distro-desktop.service getty@tty1.service
+After=custom-distro-desktop.service getty@tty1.service
+Before=graphical.target
+
+[Service]
+Type=dbus
+BusName=org.telorgon.SystemShell1
+User=telorgon-shell
+Group=telorgon-shell
+SupplementaryGroups=seat render
+RuntimeDirectory=telorgon-shell
+RuntimeDirectoryMode=0700
+StateDirectory=telorgon-shell
+StateDirectoryMode=0700
+CacheDirectory=telorgon-shell
+CacheDirectoryMode=0700
+Environment=HOME=/var/lib/telorgon-shell
+Environment=XDG_RUNTIME_DIR=/run/telorgon-shell
+Environment=XDG_CONFIG_HOME=/var/lib/telorgon-shell/config
+Environment=XDG_STATE_HOME=/var/lib/telorgon-shell/state
+Environment=XDG_CACHE_HOME=/var/cache/telorgon-shell
+Environment=LIBSEAT_BACKEND=seatd
+Environment=XDG_SESSION_TYPE=wayland
+UnsetEnvironment=DBUS_SESSION_BUS_ADDRESS DISPLAY WAYLAND_DISPLAY XDG_SESSION_ID
+TTYPath=/dev/tty1
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+ExecStart=/usr/bin/telorgon-test-shell --system-shell
+ExecStartPost=+/usr/bin/busctl call org.telorgon.SystemShell1 /org/telorgon/SystemShell org.telorgon.SystemShell1 ShowLogin
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=30
+UMask=0077
+LimitCORE=0
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectSystem=strict
+
+[Install]
+WantedBy=graphical.target

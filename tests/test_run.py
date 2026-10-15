@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+import tomllib
 import unittest
 from unittest.mock import patch
 
@@ -25,7 +26,7 @@ class RunTests(unittest.TestCase):
             (directory / "Cargo.toml").write_text("[workspace]\n")
         (self.project / "profiles").mkdir()
         for profile in ("desktop-use", "desktop-dev", "systemd", "console"):
-            (self.project / "profiles" / f"{profile}.toml").write_text('packages = ["linux", "busybox"]\n')
+            (self.project / "profiles" / f"{profile}.toml").write_text('packages = ["linux", "busybox"]\n[system_shell]\npackages = ["linux", "busybox", "fixture-app"]\n')
         sdk = self.project / "out/sdk"
         sdk.mkdir(parents=True)
         self.sysroot = sdk / "fixture"
@@ -36,7 +37,7 @@ class RunTests(unittest.TestCase):
         self.entry = cli.main
         self.events = []
 
-    def invoke(self, *arguments, fail_stage=None, sync_error=None, sdk_ready=True, boot_ok=True, desktop_start=None, progress_events=False):
+    def invoke(self, *arguments, fail_stage=None, sync_error=None, sdk_ready=True, boot_ok=True, desktop_start=None, progress_events=False, closure=None):
         def stage(argv, *, quiet):
             self.assertTrue(quiet)
             self.assertEqual(argv[:2], ["--project", str(self.project)])
@@ -44,6 +45,7 @@ class RunTests(unittest.TestCase):
             return int(argv[2] == fail_stage)
 
         def image(*args, **kwargs):
+            self.composed = kwargs
             self.events.append(["compose", kwargs["profile_name"]])
             return {"identity": self.identity, "image": {"path": str(self.image), "sha256": self.digest}}
 
@@ -55,7 +57,7 @@ class RunTests(unittest.TestCase):
             # These tests exercise orchestration; real inventories are covered in test_run_cache.
             stack.enter_context(patch.object(cli.DevelopmentCache, "inventory", return_value="fixture-inputs"))
             stack.enter_context(patch.object(vm, "discover_runtime"))
-            stack.enter_context(patch.object(compose, "runtime_packages", return_value=["linux", "busybox"]))
+            stack.enter_context(patch.object(compose, "runtime_packages", return_value=closure or ["linux", "busybox"]))
             stack.enter_context(patch.object(compose, "console_image", side_effect=image))
             stack.enter_context(patch.object(runner, "run"))
             stack.enter_context(patch.object(apps, "preflight", return_value={"ready_to_build": sdk_ready}))
@@ -83,6 +85,42 @@ class RunTests(unittest.TestCase):
         self.identity = "d" * 64
         self.invoke()
         self.assertNotEqual(first, self.desktop.call_args.kwargs["name"])
+
+    def test_system_shell_selects_its_packages_and_composes_its_policy(self):
+        self.assertEqual(self.invoke("--profile", "desktop-dev", "--system-shell", "--name", "system-shell",
+                                     closure=["linux", "busybox", "fixture-app"]), 0)
+        self.assertTrue(self.composed["system_shell"])
+        self.assertIn(["build", "linux", "busybox", "--jobs", "8", "--package-workers", "2"], self.events)
+        self.assertIn(["apps", "build", "fixture-app", "--sysroot", str(self.sysroot), "--jobs", "8",
+                       "--source-root", str(self.project / "sources"), "--online"], self.events)
+        self.desktop.assert_called_once_with(self.project, self.image, name="system-shell", development=True)
+
+    def test_system_shell_rejects_console_before_build_or_boot(self):
+        self.assertEqual(self.invoke("--profile", "console", "--system-shell"), 1)
+        self.assertEqual(self.events, [])
+        self.boot.assert_not_called()
+
+    def test_development_profile_default_selects_login_shell_and_its_package_closure(self):
+        profile = self.project / "profiles/desktop-dev.toml"
+        profile.write_text(profile.read_text().replace("[system_shell]", "[system_shell]\ndefault=true"))
+        self.assertEqual(self.invoke("--profile", "desktop-dev", closure=["linux", "busybox", "fixture-app"]), 0)
+        self.assertTrue(self.composed["system_shell"])
+        self.assertIn(["build", "linux", "busybox", "--jobs", "8", "--package-workers", "2"], self.events)
+        self.assertIn("fixture-app", next(event for event in self.events if event[:2] == ["apps", "build"]))
+
+    def test_user_shell_override_preserves_automatic_desktop_choice(self):
+        profile = self.project / "profiles/desktop-dev.toml"
+        profile.write_text(profile.read_text().replace("[system_shell]", "[system_shell]\ndefault=true"))
+        self.assertEqual(self.invoke("--profile", "desktop-dev", "--user-shell"), 0)
+        self.assertFalse(compose.system_shell_selection(
+            tomllib.loads(profile.read_text()), self.composed.get("system_shell")))
+
+    def test_default_image_alias_tracks_profile_mode_and_keeps_overrides_separate(self):
+        dev = {"system_shell": {"default": True}}
+        self.assertEqual(compose.desktop_image_name("desktop-dev", dev, True), "custom-distro-desktop-dev.img")
+        self.assertEqual(compose.desktop_image_name("desktop-dev", dev, False), "custom-distro-desktop-dev-user-shell.img")
+        self.assertEqual(compose.desktop_image_name("desktop-use", {}, False), "custom-distro-desktop-use.img")
+        self.assertEqual(compose.desktop_image_name("desktop-use", {}, True), "custom-distro-desktop-use-system-shell.img")
 
     def test_cold_run_progress_covers_the_os_image_and_vm(self):
         with patch("sys.stdout", new=io.StringIO()):

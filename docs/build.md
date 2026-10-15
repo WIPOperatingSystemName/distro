@@ -55,10 +55,23 @@ the downloaded bytes must match the same SHA256 pin. A checksum mismatch stops
 the build. GCC's bootstrap source declares an alternate official server.
 See [troubleshooting](#troubleshooting) for common failures.
 
-### 3. Check the running desktop
+### 3. Enroll a testing password and sign in
 
-When the QEMU window opens, wait for Telorgon's local `custom` desktop session.
-Open File Explorer and Settings from the launcher and check mouse and keyboard
+Desktop-dev boots the system-owned login shell with one `custom` account. In a
+second **Linux terminal, distro directory**, enroll its password on the running
+private VM:
+
+```sh
+python3 build.py dev-password --name dev
+```
+
+Enter and confirm the password at the hidden prompts. The command uses the
+private development channel and PAM; the password stays out of images, command
+arguments and reports. It changes only this saved VM's `custom` account. Select
+`custom` in the QEMU login view and enter that password. The same renderer then
+loads the user's desktop. The account and preferences persist on the VM disk.
+
+Open File Explorer and Settings from the desktop panel and check mouse and keyboard
 input. A completed progress bar establishes image preparation and QEMU startup;
 it does not establish that the guest desktop or applications work correctly.
 
@@ -152,6 +165,85 @@ Use `./run --offline` to keep both distro and component checkouts unchanged;
 required archives and Cargo dependencies must already be cached. Help commands
 also skip updates. Updating the checkout and rebuilding an image does not
 upgrade an existing named VM's disk: use a new VM name to test a changed base.
+
+## Independent system shell
+
+This mode is the default for `desktop-dev`; `desktop-use` selects it with
+`--system-shell`. It runs the same shell executable as a system service under the
+dedicated `telorgon-shell` account. Its compositor owns a private runtime
+directory and starts without a personal desktop, settings, applications or user
+bus. Boot explicitly requests a login view through the root-only system bus
+control interface. The view offers the local accounts listed in
+`/etc/telorgon/login-users`, initially `custom`. A separate root session manager
+authenticates through PAM, opens a logind session and starts an unprivileged
+session process with the user's own bus and runtime directory. The same renderer
+then shows a desktop with application buttons and a sign-out action. The user
+session discovers XDG desktop entries and launches applications with the user's
+home, permissions and bus. It supplies a private Wayland socket to the renderer,
+which admits only that user's clients and disconnects them on logout. The user's
+Settings service controls display previews through a private connection tied to
+that login. Confirmed display preferences stay in the user's home and are restored
+at the next login; logout resets the display for the login screen. Wallpaper is
+validated and decoded by the user helper, then supplied as immutable pixels to
+the renderer. The user's background is restored at login and cleared on logout;
+the renderer does not read the user's home. The user helper observes sound and
+restores saved device, volume and mute preferences. When it starts PipeWire,
+WirePlumber and Pulse compatibility, those processes belong to the user's logind
+scope and end with that session. An existing user audio server is reused. Audio
+device discovery and reconnects do not require restarting the system renderer.
+The helper also supervises the desktop portal, document portal, permission store
+and Telorgon FileChooser backend on the user's bus. Settings uses that portal
+for Add Photo; dialogs inherit the user's display and end with the login session.
+System shell mode does not yet expose a ScreenCast backend.
+Default accounts remain locked;
+password enrollment for testing belongs only in the disposable guest.
+
+1. **Linux terminal, distro directory:** build a fresh development image and
+   choose an unused VM name:
+
+   ```sh
+   ./run --profile desktop-dev --name system-shell-test
+   ```
+
+   Use `--offline` to replay edited local component sources. This mode selects
+   the profile's system shell package set; it omits the normal desktop's browser
+   and terminal. The generated image alias is
+   `out/images/custom-distro-desktop-dev.img`. To explicitly build the previous
+   automatic user desktop, add `--user-shell`; its separate alias is
+   `out/images/custom-distro-desktop-dev-user-shell.img`.
+
+2. **Second Linux terminal, distro directory:** enroll the testing password:
+
+   ```sh
+   python3 build.py dev-password --name system-shell-test
+   ```
+
+   Confirm the login view renders and select the `custom` account, then follow the
+   [authentication and isolation checks](testing.md#system-shell-isolation).
+   Locked accounts and incorrect passwords must stay on the login screen.
+
+3. Reopen that saved disk without rebuilding:
+
+   ```sh
+   python3 build.py vm --use --development --name system-shell-test \
+     --image out/images/custom-distro-desktop-dev.img
+   ```
+
+   Deploy shell application changes using the normal `deploy` command. It reads
+   the guest manifest and restarts the system shell service for this mode.
+   Service/account policy changes require a new image and unused VM name.
+
+   When editing the framework, rebuild and deploy every affected application:
+
+   ```sh
+   python3 build.py deploy telorgon-shell telorgon-settings-app \
+     telorgon-file-explorer telorgon-portal-picker --name system-shell-test \
+     --build-profile release --offline
+   ```
+
+   Complete the [application and logout checks](testing.md#system-shell-isolation)
+   after installation; a successful package transaction alone does not qualify
+   the desktop.
 
 ## Reopen a saved VM
 
@@ -275,6 +367,32 @@ are separate from GUI verification. Record the source identity, VM/base image,
 package versions/hashes, screenshots and measurements under `out/verification/`.
 `out/vms/dev/deployment.json` records the transaction and restart result.
 
+If an image build is running in another terminal, completed regular application
+packages can be deployed without waiting for its build lock:
+
+1. **Linux terminal, distro directory:** finish the selected application builds
+   against the recorded SDK. Include every affected app for a framework change:
+
+   ```sh
+   distro_sdk=$(python3 -c 'import json; print(json.load(open("out/sdk/current.json"))["sysroot"])')
+   python3 build.py apps build telorgon-shell telorgon-file-explorer \
+     telorgon-settings-app telorgon-portal-picker --sysroot "$distro_sdk" --offline
+   ```
+
+2. **Linux terminal, distro directory:** install those completed packages:
+
+   ```sh
+   python3 build.py deploy telorgon-shell telorgon-file-explorer \
+     telorgon-settings-app telorgon-portal-picker --name dev \
+     --build-profile release --offline --reuse-built
+   ```
+
+   Reuse verifies that current source contents, recipes, SDK and build profile
+   match the completed packages. A mismatch stops before installation. This
+   mode keeps regular package versions and still verifies transfers, runs one
+   transaction and checks installed versions. Check `deployment.json` for
+   success, then exercise the actual application behavior.
+
 Useful options:
 
 | Option | Behavior |
@@ -283,6 +401,7 @@ Useful options:
 | `--online` | Fetch component main branches and locked Cargo dependencies (the default) |
 | `--offline` | Keep current local source and use cached Cargo dependencies without fetching |
 | `--no-restart` | Keep the session; manually close/reopen updated applications to use new code |
+| `--reuse-built` | With `--offline`, verify and install matching completed regular packages without compiling or acquiring the image build lock |
 | `--source-root PATH` | Explicit compatible workspace override; use the same workspace throughout |
 | `--timeout SECONDS` | Guest command deadline, independent of compilation duration |
 
@@ -469,6 +588,7 @@ camera does not establish portal consent, capture or screen-sharing behavior.
 | Symptom | Check |
 | --- | --- |
 | QEMU window cannot open | Check GTK support and the WSLg display environment; see [setup](setup.md) |
+| Firefox IPDL reports `AF_UNIX path too long` | Its Python multiprocessing socket exceeded Linux's path limit. The Firefox recipe uses a private short temporary directory under `out/tmp/`; retry `./run` with the corrected recipe. Matching completed packages are reused. |
 | Black QEMU window on WSL despite successful guest boot | Check `weston.log` for shared-memory transport errors; see [blank WSLg windows](setup.md#blank-or-black-wslg-windows) |
 | Low visible frame rate on WSL | Verify `.wslgconfig`, `weston.log`, Windows/guest display rates and KVM separately |
 | TCG instead of KVM | Read the launcher's probe failure and complete [KVM access setup](setup.md#kvm-access), including a new login after group changes; do not run the builder as root |

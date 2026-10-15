@@ -460,6 +460,11 @@ def _install(app: dict, workspace: Path, binary: Path, stage: Path,
         _write(stage, "usr/share/xdg-desktop-portal/telorgon-test-shell-portals.conf",
                "[preferred]\norg.freedesktop.impl.portal.FileChooser=telorgon-file-explorer\n"
                f"org.freedesktop.impl.portal.ScreenCast={'telorgon' if capture else 'none'}\n")
+        # The system renderer has no personal portal endpoint. Its user helper
+        # owns file dialogs; screen capture needs a separate session bridge.
+        _write(stage, "usr/share/xdg-desktop-portal/telorgon-portals.conf",
+               "[preferred]\norg.freedesktop.impl.portal.FileChooser=telorgon-file-explorer\n"
+               "org.freedesktop.impl.portal.ScreenCast=none\n")
         if capture:
             _write(stage, "usr/share/xdg-desktop-portal/portals/telorgon.portal",
                    "[portal]\nDBusName=org.freedesktop.impl.portal.desktop.telorgon\n"

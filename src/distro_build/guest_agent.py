@@ -82,8 +82,12 @@ class GuestAgent:
                 raise RuntimeError("Guest agent response has no result")
             return response["return"]
 
-    def execute(self, executable: str, arguments: list[str], *, check: bool = True) -> dict:
-        process = self.call("guest-exec", {"path": executable, "arg": arguments, "capture-output": True})
+    def execute(self, executable: str, arguments: list[str], *, check: bool = True,
+                input_data: bytes | None = None, capture_output: bool = True) -> dict:
+        request = {"path": executable, "arg": arguments, "capture-output": capture_output}
+        if input_data is not None:
+            request["input-data"] = base64.b64encode(input_data).decode("ascii")
+        process = self.call("guest-exec", request)
         deadline = time.monotonic() + self.timeout
         while time.monotonic() < deadline:
             result = self.call("guest-exec-status", {"pid": process["pid"]})

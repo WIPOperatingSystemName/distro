@@ -54,12 +54,182 @@ HTTPS link through `xdg-open` and confirm it reaches Firefox. Test audio through
 the existing PipeWire session, and check the content sandbox in `about:support`.
 Use a fresh named VM for browser runtime dependencies.
 
+For Firefox build-environment changes, run the `test_firefox_build_temp.py`
+regression and rebuild with `python3 build.py build firefox`. The regression
+must reproduce the hashed-work-directory socket failure and complete a real
+multiprocessing Manager round trip using the recipe's temporary environment.
+Verify that the actual Firefox IPDL export completes and the final package
+passes its payload audits. This build check does not qualify browser GUI behavior.
+
 For terminal changes, open Foot from the launcher and with **Ctrl+Alt+T** while
 the desktop has focus. In the terminal, run `tty`, `stty size`,
 `infocmp "$TERM"` and `tput colors`; confirm a PTY, valid terminal definitions
 and 256 colors. Resize the window and check that `stty size` changes and text
 remains readable. Check colored output and Unicode text with the packaged font,
 and confirm the launcher shows one Foot entry.
+
+## System shell isolation
+
+Build the [default development system shell](build.md#independent-system-shell) in a new
+named `desktop-dev` VM. Use a release build when deploying the shell:
+
+```sh
+python3 build.py deploy telorgon-shell --name system-shell-test --build-profile release --offline
+```
+
+Through the private guest agent, verify that `telorgon-shell.service` is active,
+its renderer has the dedicated account's UID and a cgroup under `system.slice`,
+and `/run/telorgon-shell` belongs to that account with mode `0700`. Confirm its
+`wayland-system` socket exists and the login view actually renders. Select the
+`custom` account with the mouse and keyboard; confirm the password field masks
+input and supports Backspace and Enter. The automatic
+`custom-distro-desktop.service` must be inactive, and no `custom` login session
+or `user@1000.service` should be required before authentication.
+
+Through the guest agent as root, call `Snapshot` on `org.telorgon.SystemShell1`
+at `/org/telorgon/SystemShell` with the same interface name; it returns the view
+and selected username. Call `ShowLogin` and confirm that selection clears while
+the renderer PID stays the same. Calls from `custom` must be denied, including
+when addressed through the shell's unique bus name.
+
+Record the renderer PID, start and stop `user@1000.service`, and check that the same PID
+remains active. Check that the service cannot read `/home/custom`. Preserve the
+source snapshot, installed package versions/hashes, base image digest, screenshot
+and observed results under `out/`. These checks cover system shell ownership and
+lifetime and login view.
+
+In that disposable VM, test a locked account first. Back up `/etc/shadow` with
+root-only permissions, enroll a temporary password for `custom` inside the guest,
+then exercise both an incorrect password and the correct password through the
+actual login UI. Do not bake passwords into images or put them in process
+arguments, logs or evidence. Restore the original shadow file in cleanup and
+verify its digest matches the backup.
+
+After successful authentication, confirm the desktop renders, `Snapshot` returns
+`desktop` and `custom`, and logind reports a local Wayland user session on seat0.
+Verify the `--user-session` process has UID/GID 1000, belongs to that session's
+scope, and owns `org.telorgon.UserSession1` on the user's bus. The renderer PID,
+UID, private socket and home isolation must remain unchanged. Sign out through
+the desktop, check the user process and logind session disappear, and confirm
+the same renderer returns to an unselected login view. Repeat login/logout, and
+exercise termination of the user process and session manager while logged in.
+Calls to `org.telorgon.Session1` from ordinary users must be rejected through
+both its public and unique bus names. Record each observed result separately;
+these checks establish authentication, session lifetime and isolation.
+
+For application integration, deploy all affected applications after framework
+changes using the command in the [build guide](build.md#independent-system-shell).
+Sign in and launch File Explorer and Settings from the desktop panel. Interact
+with the windows and capture the rendered results. Confirm the processes have
+the authenticated user's UID, home, session bus and session scope, and use
+`WAYLAND_DISPLAY=telorgon-<session-id>` in that user's runtime directory. The
+socket must be owned by that user with mode `0600`; a connection from a different
+UID must be disconnected even if it can reach the path. Test a desktop entry in
+the user's own XDG applications directory to establish that discovery runs as
+the user while the renderer remains unable to read the home directory.
+
+Sign out while applications are open. Confirm their processes and session socket
+disappear, their windows are removed, and the renderer PID stays unchanged.
+Repeat login and application launch after terminating the user helper and after
+killing the session manager. Record package hashes, source snapshots and each
+actual observation under `out/`. These checks do not qualify wallpaper, audio,
+portals or X11 applications in the system shell.
+
+For display settings, open Settings through the panel and confirm the connected
+monitor and available controls render. Increase interface scale and verify that
+the window moves into the smaller workspace with its confirmation buttons
+reachable. Save a preview and exercise both Keep and Revert. Leave a preview
+unconfirmed and verify that the display rolls back after 20 seconds. An invalid
+configuration or expired token must return an error while subsequent snapshots
+and valid previews still work. Confirm the settings endpoint on the user's bus
+belongs to the user helper, and direct calls from that user to the renderer's
+system-bus display method are denied through both public and unique bus names.
+
+Verify that Keep saves the preference under the user's home. Sign out during a
+preview, confirm the login view returns to default display settings, and sign in
+again to verify the confirmed preference is restored. Attempts to use a retired
+session ID or preview token must fail. Repeat helper and broker crash recovery
+with a pending preview and confirm the renderer PID remains unchanged. Preserve
+the original guest preferences and locked-account credentials during cleanup;
+record source/package identities, screenshots and actual results under `out/`.
+
+For personalization, select two distinct managed photos through Settings and
+verify each changes the actual desktop background. Switch back to the first
+photo to check that it uploads fresh pixels. Confirm that saved preferences and
+the background library belong to the user, and that the same background returns
+after login. The login screen must always return to the default background after
+logout or a helper/broker failure. Direct user calls to the renderer's background
+method, including through its unique bus name, and calls with a retired session
+ID must be rejected.
+
+Try a missing image, a symlink, corrupt image bytes, and a managed filename whose
+content digest does not match. Each must leave the displayed background intact
+and permit a later valid selection. Test a missing saved background at login:
+the default must render with an error available through the settings snapshot,
+without rewriting the saved preference. Deleting the applied or saved background
+must fail; deleting an unused managed photo must succeed. Verify pixel transfer
+rejects mutable descriptors, non-files, invalid dimensions and inconsistent
+lengths. Preserve the original user preferences/library and guest credentials in
+cleanup. These checks do not establish the file chooser or audio integration.
+
+For sound, verify no user audio servers start before authentication. Sign in and
+check PipeWire, WirePlumber and Pulse compatibility run with the user's UID,
+home and runtime directory. Servers started by the helper must belong to its
+logind session scope. Open Sound in Settings, select an output/input, change
+volume and mute, save, and verify observed device state as well as the user-owned
+preferences file. Sign out and sign in to verify restoration. A live external
+volume adjustment must remain in effect rather than being overwritten by the
+periodic restore worker.
+
+Kill the private guest's audio server and verify its supervised restart, client
+reconnection and restoration of saved preferences. WirePlumber's clean exit
+on disconnection must also restart, with bounded retries. Missing devices and
+invalid preferences must report errors and allow a later valid reload. Sign out
+with audio active, then repeat helper and broker crash recovery: session-owned
+audio processes must end while the renderer PID remains unchanged. An existing
+audio stack reused from another login remains owned by that login. Keep host
+playback/capture and physical device qualification separate from virtual device
+state checks, and restore original guest preferences and credentials in cleanup.
+
+For file dialogs, deploy the shell and Settings packages in a private system
+shell VM. Confirm no portal services start before authentication. After login,
+check that the desktop portal, document portal, permission store and FileChooser
+backend have the user's UID, home, display and logind scope. Open Personalization
+in Settings and use Add Photo to select an image from the user's home through
+the actual Telorgon chooser. Verify its image filter, imported managed file,
+user ownership and displayed wallpaper after Apply. Cancel a second request and
+confirm the library and preferences stay unchanged. Test file-open and file-save
+requests through the frontend separately; readiness alone is insufficient.
+
+Close a frontend request while its dialog is open and confirm the child exits.
+Direct calls to the backend from an ordinary application must fail. Kill the
+backend and frontend separately, verify their supervised restart, and complete
+a later request. Sign out with a chooser open, then repeat helper and broker
+crash recovery. Portal processes, dialogs and requests must disappear while the
+system renderer remains alive. Sign in again and complete another selection.
+Record source/package identities, the VM image digest, screenshots and actual
+responses under `out/`; restore guest credentials and preferences during cleanup.
+These checks qualify local file dialogs, with screen sharing and sandboxed
+document grants requiring their own runtime tests.
+
+For the final combined check, compose `desktop-dev` without a shell override and
+boot a new named VM. Verify that it selects the system compositor, exposes only
+`custom`, keeps that account locked, and starts no personal bus or services
+before authentication. Back up guest credentials and preferences, then exercise
+`dev-password` with a temporary password supplied only through its hidden prompts
+or an in-memory test harness. Confirm a wrong password is rejected and the
+correct password opens the desktop in the same renderer process.
+
+Launch Files and Settings from the panel. Import and save a wallpaper through
+Add Photo, save display and sound settings, and verify actual display pixels and
+audio state. Reboot the guest, sign in with the enrolled password, and check
+restored preferences and application launch. Sign out with a dialog open and
+repeat helper, broker and renderer crash recovery. The first two must retain the
+renderer; a renderer crash must revoke the old user session and return to login
+before another sign-in. Restore the original shadow digest and preferences,
+power off cleanly and preserve exact image/package/source identities under
+`out/`. This qualifies the single-user VM flow; screen sharing, X11 applications
+and physical audio devices need separate qualification.
 
 ## Hover performance
 

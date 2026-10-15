@@ -3,7 +3,7 @@ schema = 1
 [package]
 name = "firefox"
 version = "157.0.1"
-revision = 1
+revision = 2
 arch = "x86_64"
 description = "Firefox web browser for native Wayland desktops"
 license = "MPL-2.0"

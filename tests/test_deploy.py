@@ -118,6 +118,23 @@ class AgentProtocolTests(unittest.TestCase):
                 agent.transfer(source, "/package")
         self.assertEqual(commands[-1], "guest-file-close")
 
+    def test_secret_stdin_uses_input_data_with_output_capture_disabled(self):
+        observed = []
+        def handler(request):
+            if request["execute"] == "guest-sync-delimited":
+                return None
+            if request["execute"] == "guest-exec":
+                observed.append(request["arguments"])
+                return {"return": {"pid": 123}}
+            return {"return": {"exited": True, "exitcode": 0}}
+        with GuestAgent(self.serve(handler)) as agent:
+            result = agent.execute("/usr/bin/telorgon-test-shell", ["--set-user-password", "custom"],
+                                   input_data=b"fixture-password\n", capture_output=False)
+        self.assertEqual(base64.b64decode(observed[0]["input-data"]), b"fixture-password\n")
+        self.assertFalse(observed[0]["capture-output"])
+        self.assertNotIn("fixture-password", str(observed[0]["arg"]))
+        self.assertEqual(result["out-data"], "")
+
 
 class DeploymentTests(unittest.TestCase):
     def setUp(self):
@@ -185,6 +202,19 @@ class DeploymentTests(unittest.TestCase):
             install(agent, self.artifacts)
         self.assertFalse(any(exe == "/usr/bin/systemctl" for exe, _ in agent.calls))
 
+    def test_system_shell_deployment_restarts_the_system_service_and_waits_for_its_socket(self):
+        agent = self.agent()
+        result = install(agent, self.artifacts, system_shell=True)
+        self.assertTrue(result["desktop_restarted"])
+        self.assertIn(("/usr/bin/systemctl", ["restart", "telorgon-shell.service"]), agent.calls)
+        self.assertNotIn(("/usr/bin/systemctl", ["restart", "custom-distro-desktop.service"]), agent.calls)
+        script = next(args[1] for executable, args in agent.calls if executable == "/bin/sh")
+        script = script.replace("/run/telorgon-shell", str(self.root)).replace("sleep 1", "sleep 0.001")
+        self.assertNotEqual(subprocess.run(["/bin/sh", "-ec", script], capture_output=True).returncode, 0)
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
+            server.bind(str(self.root / "wayland-system"))
+            self.assertEqual(subprocess.run(["/bin/sh", "-ec", script], capture_output=True).returncode, 0)
+
     def test_restart_waits_when_a_readiness_file_precedes_its_live_socket(self):
         agent = self.agent()
         install(agent, self.artifacts)
@@ -241,6 +271,37 @@ class DeploymentTests(unittest.TestCase):
         self.assertFalse(record["success"])
         self.assertEqual(record["stage"], "preflight")
         self.assertIn("agent unavailable", record["error"])
+
+    def test_reuse_requires_a_matching_completed_build_and_verifies_its_receipt(self):
+        artifact = self.artifacts[0]
+        artifact["build_identity"] = "a" * 64
+        receipt = self.root / "out/apps/build/telorgon-shell" / artifact["build_identity"] / "result.json"
+        receipt.parent.mkdir(parents=True)
+        receipt.write_text(json.dumps(artifact))
+        manifest = {"manifest": str(self.root / "private/sources.json"), "identity": "snapshot"}
+        plan = {"cached": True, "build_identity": artifact["build_identity"]}
+        with patch.object(deployment.apps, "prepare", return_value=manifest), \
+             patch.object(deployment.apps, "build_app", return_value=plan) as build:
+            actual, artifacts = deployment.reuse_packages(self.root, ["telorgon-shell"], self.root / "sdk",
+                profile="release", source_root=None, output=self.root / "private")
+        self.assertEqual(actual, manifest)
+        self.assertEqual(artifacts, [artifact])
+        self.assertTrue(build.call_args.kwargs["plan_only"])
+        self.assertFalse(build.call_args.kwargs["development"])
+        Path(artifact["path"]).write_bytes(b"changed after planning")
+        with patch.object(deployment.apps, "prepare", return_value=manifest), \
+             patch.object(deployment.apps, "build_app", return_value=plan):
+            with self.assertRaisesRegex(RuntimeError, "receipt changed"):
+                deployment.reuse_packages(self.root, ["telorgon-shell"], self.root / "sdk",
+                    profile="release", source_root=None, output=self.root / "private")
+
+    def test_reuse_rejects_stale_sources_sdk_or_profile_without_compiling(self):
+        with patch.object(deployment.apps, "prepare", return_value={"manifest": "private.json"}), \
+             patch.object(deployment.apps, "build_app", return_value={"cached": False}) as build:
+            with self.assertRaisesRegex(RuntimeError, "No matching completed build"):
+                deployment.reuse_packages(self.root, ["telorgon-shell"], self.root / "sdk",
+                    profile="release", source_root=None, output=self.root / "private")
+        self.assertTrue(build.call_args.kwargs["plan_only"])
 
 
 if __name__ == "__main__":

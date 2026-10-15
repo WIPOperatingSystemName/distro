@@ -197,7 +197,7 @@ class DevelopmentTests(unittest.TestCase):
             return {"package": name}
         self.build = patch.object(development.apps, "build_app", side_effect=build).start()
         self.addCleanup(patch.stopall)
-        def install(agent, artifacts, *, restart):
+        def install(agent, artifacts, *, restart, system_shell=False):
             for artifact in artifacts:
                 self.installed[artifact["package"]] = "v-" + artifact["package"]
             return {"packages": artifacts, "desktop_restarted": restart}
@@ -222,6 +222,17 @@ class DevelopmentTests(unittest.TestCase):
         self.assertEqual(self.install.call_count, 1)
         self.assertTrue(report["installation"]["desktop_restarted"])
         self.assertEqual([item["package"] for item in self.install.call_args.args[1]], ["one", "two"])
+
+    def test_system_shell_manifest_selects_its_closure_and_restart_mode(self):
+        (self.root / "profiles/desktop-dev.toml").write_text('packages=["one","two"]\n[system_shell]\npackages=["one"]\n')
+        self.guest["system_shell"] = True
+        self.applications["one"]["development"] = {"restart": "desktop"}
+        with patch("distro_build.compose.runtime_packages", return_value=["libc", "one"]) as closure:
+            self.run_dev(adopt_base=True)
+        closure.assert_called_once_with(self.root, ["one"], providers={"libudev": "systemd"})
+        self.assertEqual(self.build_calls, [("one", True), ("one", False)])
+        self.assertTrue(self.install.call_args.kwargs["system_shell"])
+        self.assertTrue(self.install.call_args.kwargs["restart"])
 
     def test_service_restart_and_no_restart_are_manifest_driven(self):
         self.applications["one"]["development"] = {"restart": "services", "services": ["future.service"]}

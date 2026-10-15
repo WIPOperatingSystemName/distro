@@ -13,6 +13,7 @@ import tomllib
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 from distro_build.desktop_services import ServiceBuild
 from distro_build.desktop_native import _link_wrapper
+from build_temp import temporary_environment
 
 b = ServiceBuild()
 recipe = Path(__file__).parent
@@ -71,10 +72,7 @@ wasi = b.secondary("wasi-seed")
     "nasm": {"kind": "source-built-private-host-tool", "version": "2.16.03"},
 }, indent=2) + "\n")
 
-_link_wrapper(b.wrapper, b.cc, b.sysroot, [b.sysroot, b.tools, b.work, rust])
 cxx = b.work / "target-cxx"
-_link_wrapper(cxx, b.tools / "pass2/bin" / f"{b.target}-g++", b.sysroot,
-              [b.sysroot, b.tools, b.work, rust])
 gcc_install = next((b.tools / "pass2/lib/gcc" / b.target).iterdir())
 bindgen_flags = f"--sysroot={b.sysroot} --gcc-install-dir={gcc_install}"
 obj = b.work / "obj"
@@ -102,13 +100,27 @@ b.env.update({"MOZCONFIG": str(config), "MOZBUILD_STATE_PATH": str(b.work / "moz
               "CARGO_HOME": str(b.work / "cargo-home"), "BINDGEN_CFLAGS": bindgen_flags,
               "PATH": str(b.native / "bin") + ":" + str(llvm) + ":" + b.env["PATH"],
               "RUSTFLAGS": f"-C linker={cxx} -C link-arg=-static-libgcc --remap-path-prefix={b.work}=/usr/src/firefox-build"})
-b.run(["python3", "mach", "configure"])
-# Configure records host flags. Exporting them during make also exports its
-# per-object dependency-file flags to Cargo, whose build scripts run elsewhere.
-for variable in ("HOST_CFLAGS", "HOST_CXXFLAGS", "HOST_LDFLAGS"):
-    b.env.pop(variable, None)
-b.run(["python3", "mach", "build", f"-j{b.jobs}"])
-b.run(["make", "-C", str(obj), "install", f"DESTDIR={b.stage}"])
+# The hashed work directory is too deep for Python's multiprocessing Manager
+# socket. Keep Mach's private temporary files under a short path in out/.
+output = Path(os.environ["CD_BOOTSTRAP_ROOT"]).parents[1]
+with temporary_environment(b.env, output) as environment:
+    b.env = environment
+    temporary = b.env["TMPDIR"]
+    # Configure compiles temporary objects here. Admit only this private build's
+    # directory alongside the existing work/SDK roots.
+    allowed = [b.sysroot, b.tools, b.work, rust, Path(temporary)]
+    _link_wrapper(b.wrapper, b.cc, b.sysroot, allowed)
+    _link_wrapper(cxx, b.tools / "pass2/bin" / f"{b.target}-g++", b.sysroot, allowed)
+    b.env["CFLAGS"] += f" -ffile-prefix-map={temporary}=/usr/src/firefox-tmp"
+    b.env["CXXFLAGS"] += f" -ffile-prefix-map={temporary}=/usr/src/firefox-tmp"
+    b.env["RUSTFLAGS"] += f" --remap-path-prefix={temporary}=/usr/src/firefox-tmp"
+    b.run(["python3", "mach", "configure"])
+    # Configure records host flags. Exporting them during make also exports its
+    # per-object dependency-file flags to Cargo, whose build scripts run elsewhere.
+    for variable in ("HOST_CFLAGS", "HOST_CXXFLAGS", "HOST_LDFLAGS"):
+        b.env.pop(variable, None)
+    b.run(["python3", "mach", "build", f"-j{b.jobs}"])
+    b.run(["make", "-C", str(obj), "install", f"DESTDIR={b.stage}"])
 b.license("firefox", ["LICENSE"])
 
 entry = b.stage / "usr/share/applications/firefox.desktop"

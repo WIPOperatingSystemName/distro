@@ -3,3 +3,7 @@ name = "Custom Distro"
 description = "Telorgon development VM with private host package deployment"
 packages = ["busybox", "linux", "pacman", "gnupg", "systemd", "telorgon-shell", "foot", "firefox", "hicolor-icon-theme", "telorgon-file-explorer", "telorgon-settings-app", "telorgon-portal-picker", "shared-mime-info", "desktop-file-utils", "file", "qemu-guest-agent"]
 image_size_mib = 4096
+
+[system_shell]
+default = true
+packages = ["busybox", "linux", "pacman", "systemd", "telorgon-shell", "qemu-guest-agent"]

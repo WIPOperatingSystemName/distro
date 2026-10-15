@@ -201,12 +201,31 @@ def render_reference(layers: list[dict], packages: dict[str, Path], projects: di
               "The `systemd` tree is the common service/session policy. Desktop profiles",
               "also use the `desktop` tree; normal `desktop-use` and `desktop-dev` images",
               "then remove qualification checks and apply the `desktop-use` overlay.",
+              "The default `desktop-dev` login flow applies `system/system-shell` last and replaces",
+              "the automatic user desktop activation with a dedicated system compositor. It",
+              "renders login and the user desktop in the same process. A separate root",
+              "manager authenticates with PAM and retains the user's logind session. The",
+              "`dev-password` command enrolls the private guest account through PAM, with",
+              "the new password on stdin and no credential in images or reports. The",
+              "user helper discovers and launches applications under the user's UID; the",
+              "compositor admits that user's Wayland clients and revokes them on logout.",
+              "A private session connection lets the user helper control display previews;",
+              "confirmed preferences stay in the user home and login restores them. Logout",
+              "resets the login display and background. The helper validates and decodes",
+              "wallpaper in the user context and sends immutable pixels to the renderer;",
+              "the renderer does not read user homes. Sound observation and saved preferences",
+              "belong to the user helper; audio servers it starts share the logind scope and",
+              "end with the session. Reconnects use bounded service restarts.",
+              "The helper supervises user portal processes in that scope. Settings imports",
+              "photos through the user's FileChooser; system shell ScreenCast is disabled",
+              "until a separate session bridge is implemented.",
               "Rows marked qualification describe the disposable check profiles, rather",
               "than services silently running in the normal desktop.", ""]
     for title, prefix in (("Early boot and base identity", "system/"),
                           ("System and login policy", "system/systemd/"),
                           ("Desktop and qualification policy", "system/desktop/"),
-                          ("Normal desktop session policy", "system/desktop-use/")):
+                          ("Normal desktop session policy", "system/desktop-use/"),
+                          ("Independent system shell policy", "system/system-shell/")):
         rows = [(path, purpose) for path, purpose in sorted(details["policy"].items())
                 if path.startswith(prefix) and (prefix != "system/" or len(Path(path).parts) == 2)]
         lines += [f"#### {title}", "", "| Policy source | Purpose |", "| --- | --- |"]

@@ -87,7 +87,7 @@ The [boot and assembled system pieces](#boot-and-assembled-system-pieces)
 below cover firmware, disk layout and the generated base/session packages.
 
 Coverage: **99 package recipes, 6 source repositories and
-40 guest policy files**, plus the named pieces bundled inside them.
+48 guest policy files**, plus the named pieces bundled inside them.
 Exact installed file lists, versions, source pins and transitive Cargo dependencies
 remain in package/image manifests, build receipts and the owning Cargo locks.
 This reference describes component responsibilities, not qualification of a
@@ -428,7 +428,7 @@ Owner: [`telorgon-shell`](../packages/telorgon-shell/application.toml).
 | telorgon-session | Sets the desktop/session identity and executes the shell. |
 | Shell settings service | Exposes the shell-owned display and personalization controls used by Settings. |
 | Wayland session entry | Registers Telorgon as a graphical session. |
-| Portal preferences and capability record | Select File Explorer for FileChooser and record whether the packaged SDK enables ScreenCast. |
+| Portal preferences and capability record | Select File Explorer for FileChooser and record whether the packaged SDK enables ScreenCast. The independent system shell uses a user-owned FileChooser and disables ScreenCast pending a session bridge. |
 
 #### Pieces in systemd
 
@@ -647,6 +647,24 @@ early userspace; they are not independent applications.
 The `systemd` tree is the common service/session policy. Desktop profiles
 also use the `desktop` tree; normal `desktop-use` and `desktop-dev` images
 then remove qualification checks and apply the `desktop-use` overlay.
+The default `desktop-dev` login flow applies `system/system-shell` last and replaces
+the automatic user desktop activation with a dedicated system compositor. It
+renders login and the user desktop in the same process. A separate root
+manager authenticates with PAM and retains the user's logind session. The
+`dev-password` command enrolls the private guest account through PAM, with
+the new password on stdin and no credential in images or reports. The
+user helper discovers and launches applications under the user's UID; the
+compositor admits that user's Wayland clients and revokes them on logout.
+A private session connection lets the user helper control display previews;
+confirmed preferences stay in the user home and login restores them. Logout
+resets the login display and background. The helper validates and decodes
+wallpaper in the user context and sends immutable pixels to the renderer;
+the renderer does not read user homes. Sound observation and saved preferences
+belong to the user helper; audio servers it starts share the logind scope and
+end with the session. Reconnects use bounded service restarts.
+The helper supervises user portal processes in that scope. Settings imports
+photos through the user's FileChooser; system shell ScreenCast is disabled
+until a separate session bridge is implemented.
 Rows marked qualification describe the disposable check profiles, rather
 than services silently running in the normal desktop.
 
@@ -709,6 +727,19 @@ than services silently running in the normal desktop.
 | [`system/desktop-use/usr/lib/custom-distro/start-desktop-session`](../system/desktop-use/usr/lib/custom-distro/start-desktop-session) | Keeps the PAM session open, imports its environment into the user manager and waits for the graphical session target. |
 | [`system/desktop-use/usr/lib/custom-distro/start-telorgon-shell`](../system/desktop-use/usr/lib/custom-distro/start-telorgon-shell) | Normal shell launcher: creates the per-user shell log and runs telorgon-session. |
 | [`system/desktop-use/usr/lib/custom-distro/wait-telorgon-shell`](../system/desktop-use/usr/lib/custom-distro/wait-telorgon-shell) | Normal readiness helper: verifies the actual Wayland socket, updates activation environments and records the socket for clients. |
+
+#### Independent system shell policy
+
+| Policy source | Purpose |
+| --- | --- |
+| [`system/system-shell/etc/pam.d/telorgon-password`](../system/system-shell/etc/pam.d/telorgon-password) | Explicit root password enrollment through pam_unix, which owns hashing, locking and shadow-file updates. The development CLI sends the new password on private stdin. |
+| [`system/system-shell/etc/pam.d/telorgon-session`](../system/system-shell/etc/pam.d/telorgon-session) | Local password and account checks followed by pam_unix, loginuid and pam_systemd session setup in the same PAM transaction. |
+| [`system/system-shell/etc/systemd/system/telorgon-session-manager.service`](../system/system-shell/etc/systemd/system/telorgon-session-manager.service) | Separate privileged session manager. Each password attempt runs PAM in a fresh worker; successful sessions retain an unprivileged helper that discovers and launches the user's applications and supplies a session-specific Wayland listener to the renderer. Logout ends the session scope and revokes its clients. |
+| [`system/system-shell/etc/systemd/system/telorgon-shell.service`](../system/system-shell/etc/systemd/system/telorgon-shell.service) | Default desktop-dev system compositor, independent of PAM and user managers, with private runtime/state/cache directories and protected home directories. Waits for the system control bus name, then requests the login view as root. |
+| [`system/system-shell/etc/sysusers.d/telorgon-shell.conf`](../system/system-shell/etc/sysusers.d/telorgon-shell.conf) | Creates the dedicated shell account and grants seat/render device access. |
+| [`system/system-shell/etc/telorgon/login-users`](../system/system-shell/etc/telorgon/login-users) | Explicit list of local interactive accounts offered by the login view, initially custom. This does not unlock accounts or authorize a session. |
+| [`system/system-shell/usr/share/dbus-1/system.d/org.telorgon.Session1.conf`](../system/system-shell/usr/share/dbus-1/system.d/org.telorgon.Session1.conf) | Restricts session management to root and the dedicated renderer account. Ordinary users cannot request authentication, attach desktops or end sessions. |
+| [`system/system-shell/usr/share/dbus-1/system.d/org.telorgon.SystemShell1.conf`](../system/system-shell/usr/share/dbus-1/system.d/org.telorgon.SystemShell1.conf) | Restricts system shell control to root and grants only the dedicated renderer account ownership of its bus name. |
 
 <!-- END COMPONENT REFERENCE -->
 
@@ -812,7 +843,7 @@ seat-group socket; using logind for sessions does not add a libseat logind backe
 The desktop session starts its user bus, PipeWire and WirePlumber, then the shell
 and graphical-session target before portal activation. Read the actual Wayland
 socket from `/run/user/1000/telorgon-wayland-socket`; do not assume `wayland-0`.
-Guest policy and units live in `system/desktop/`, `system/desktop-use/` and
+Guest policy and units live in `system/desktop/`, `system/desktop-use/`, `system/system-shell/` and
 `system/systemd/`.
 
 Capture configuration follows the selected framework's declared
